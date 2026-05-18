@@ -4,6 +4,19 @@ from functools import partial
 from core.tool_registry import validate_args
 
 
+class ToolExecutor:
+    def __init__(self):
+        self.tools: dict[str, callable] = {}
+
+    def register_tool(self, name: str, tool_function: callable):
+        self.tools[name] = tool_function
+
+    def execute_tool(self, name: str, arguments: dict):
+        if name not in self.tools:
+            raise KeyError(f"Tool '{name}' is not registered")
+        return self.tools[name](**arguments)
+
+
 def execute_tool_call(tc: dict, tool_map: dict, tools: list) -> tuple[dict, str, dict, str]:
     fn_name = tc["function"]["name"]
     raw_args = tc["function"]["arguments"]
@@ -14,7 +27,11 @@ def execute_tool_call(tc: dict, tool_map: dict, tools: list) -> tuple[dict, str,
         fn_args = {}
 
     try:
-        validate_args(fn_name, fn_args, tools)
+        if tools and isinstance(tools[0], str):
+            if fn_name not in tools:
+                raise ValueError(f"Unknown tool: {fn_name}")
+        else:
+            validate_args(fn_name, fn_args, tools)
         result = tool_map[fn_name](**fn_args)
     except KeyError:
         result = f"Error: unknown tool '{fn_name}'"
