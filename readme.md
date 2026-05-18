@@ -1,12 +1,16 @@
 # basic-agents
 
+> **Make agents do anything — with just a prompt and tools.**
+
 A simple, extendable agentic framework for running LLM-powered agents against any OpenAI-compatible local or remote inference server.
 
 ## Overview
 
 `basic-agents` provides a lightweight CLI harness for building and running specialized agents. Each agent lives in its own directory under `agents/` and follows a naming convention that lets the framework load it dynamically. Sessions are persisted to a local SQLite database so conversations can be resumed across runs.
 
-The framework is intentionally minimal — no heavy dependencies, no cloud lock-in. It works out of the box with local inference servers like `llama-server` (llama.cpp / ik_llama.cpp) and should work with any OpenAI-compatible endpoint.
+One of the core motivations behind this project is **eliminating the massive context overhead that generalized agents carry by default**. Instead of one bloated agent that knows about everything, you build lean, purpose-specific agents — each carrying only the system prompt, tools, and context it actually needs. This keeps inference fast and costs low, especially for long-running tasks.
+
+The framework is intentionally minimal — no heavy dependencies, no cloud lock-in. It works out of the box with local inference servers like `llama-server` (llama.cpp / ik_llama.cpp) and with any OpenAI-compatible remote endpoint including OpenRouter.
 
 ## Project Structure
 
@@ -50,6 +54,37 @@ python main.py \
   --max-turns 10
 ```
 
+### Using OpenRouter
+
+To run against any model available on OpenRouter, set `--llm-base`, `--model`, and `--api-key`:
+
+```bash
+python main.py \
+  --agent default \
+  --query "Refactor this module" \
+  --llm-base https://openrouter.ai/api/v1 \
+  --model anthropic/claude-sonnet-4-5 \
+  --api-key sk-or-... \
+  --max-turns 50
+```
+
+This works with any provider that exposes an OpenAI-compatible `/v1/chat/completions` endpoint.
+
+### Long-running Tasks
+
+For tasks that span many tool calls — large refactors, file processing pipelines, multi-step research — set `--max-turns` generously. If the agent hits the limit before finishing, resume from where it left off using `--resume-session`:
+
+```bash
+# Start a long task
+python main.py --agent default --query "Audit and fix all TODO comments in the repo" \
+  --max-turns 100 --session-name "todo-audit"
+
+# If it stops, resume
+python main.py --agent default --query "Continue" --resume-session 3 --max-turns 100
+```
+
+Sessions persist the full conversation history, so the agent picks up with complete context intact.
+
 ### CLI Options
 
 | Flag | Default | Description |
@@ -58,12 +93,12 @@ python main.py \
 | `--query` | `""` | The question or task to send to the agent |
 | `--llm-base` | `http://localhost:8080` | Base URL of the LLM inference server |
 | `--model` | `local` | Model name passed to the server |
-| `--max-turns` | `10` | Maximum tool-call rounds before stopping |
+| `--max-turns` | `10` | Maximum tool-call rounds before stopping — set generously for long tasks |
 | `--api-key` | `""` | Bearer token for external API endpoints |
 | `--files-base-dir` | `/workspace` | Base directory exposed to file tools |
 | `--include` | — | Path to a file whose contents are appended to the query |
 | `--lines` | — | Line range from `--include`, e.g. `10-20` or `20` |
-| `--resume-session` | — | Resume an existing session by its integer ID |
+| `--resume-session` | — | Resume an existing session by ID — useful when max turns is reached |
 | `--session-name` | `Default Session` | Name for a new session |
 
 ### Including File Context
@@ -172,4 +207,4 @@ python run_tests.py
 
 ## Compatibility
 
-Designed to work with any OpenAI-compatible `/v1/chat/completions` endpoint. Tested with local servers running via llama.cpp / ik_llama.cpp. Should work with remote providers (OpenAI, Together, etc.) by setting `--llm-base` and `--api-key` accordingly.
+Designed to work with any OpenAI-compatible `/v1/chat/completions` endpoint. Tested with local servers running via llama.cpp / ik_llama.cpp. Works with remote providers by setting `--llm-base` and `--api-key` — including **OpenRouter** (`https://openrouter.ai/api/v1`), OpenAI, Together AI, and others.
