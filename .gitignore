@@ -1,0 +1,7 @@
+# Ignore all __pycache__ directories
+**/__pycache__/
+
+# Optionally ignore all compiled python files
+*.py[cod]
+*$py.class
+test-prompt.md
