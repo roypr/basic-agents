@@ -1,8 +1,10 @@
-from pathlib import Path
 from db.session_db import SessionDB
 from utils.llm_client import call_llm_streaming, get_adapter
-from utils.session_manager import load_system_prompt, init_session_db
+from utils.session_manager import init_session_db
 from utils.tool_executor import execute_tool_calls
+
+
+SYSTEM_PROMPT = "You are a helpful assistant."
 
 
 class BaseAgent:
@@ -13,7 +15,6 @@ class BaseAgent:
         max_turns: int = 10,
         resume_session: int | None = None,
         session_name: str = "Default Session",
-        system_prompt_file: str | None = None,
         api_key: str = "",
         use_tools: bool = True,
     ):
@@ -22,7 +23,6 @@ class BaseAgent:
         self.max_turns = max_turns
         self.resume_session = resume_session
         self.session_name = session_name
-        self.system_prompt_file = system_prompt_file
         self.api_key = api_key
         self.use_tools = use_tools
 
@@ -33,12 +33,10 @@ class BaseAgent:
         self.system_prompt = self.resolve_system_prompt()
 
     def resolve_system_prompt(self) -> str:
-        if self.system_prompt_file:
-            return load_system_prompt(self.system_prompt_file)
         return self.get_system_prompt()
 
     def get_system_prompt(self) -> str:
-        raise NotImplementedError("Agent must implement get_system_prompt()")
+        return SYSTEM_PROMPT
 
     def get_tools(self) -> list:
         raise NotImplementedError("Agent must implement get_tools()")

@@ -5,35 +5,9 @@ import requests
 import shutil
 import subprocess
 from datetime import datetime, timezone
-from html.parser import HTMLParser
 from ddgs import DDGS
 from utils.file_utils import FILES_BASE_DIR, safe_path, ensure_base_dir_exists
-
-
-class _TextExtractor(HTMLParser):
-    _SKIP = {"script", "style", "head", "noscript", "svg"}
-
-    def __init__(self):
-        super().__init__()
-        self._parts = []
-        self._skip_depth = 0
-
-    def handle_starttag(self, tag, attrs):
-        if tag in self._SKIP:
-            self._skip_depth += 1
-
-    def handle_endtag(self, tag):
-        if tag in self._SKIP:
-            self._skip_depth = max(0, self._skip_depth - 1)
-
-    def handle_data(self, data):
-        if not self._skip_depth:
-            stripped = data.strip()
-            if stripped:
-                self._parts.append(stripped)
-
-    def get_text(self):
-        return "\n".join(self._parts)
+from utils.html_utils import extract_text_from_html
 
 
 def validate_args(tool_name: str, args: dict, tools: list) -> None:
@@ -66,9 +40,7 @@ def request_get(url: str) -> str:
     resp.raise_for_status()
     content_type = resp.headers.get("Content-Type", "")
     if "html" in content_type:
-        extractor = _TextExtractor()
-        extractor.feed(resp.text)
-        text = extractor.get_text()
+        text = extract_text_from_html(resp.text)
         text = re.sub(r"\n{3,}", "\n\n", text)
     else:
         text = resp.text

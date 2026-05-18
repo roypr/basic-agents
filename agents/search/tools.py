@@ -1,33 +1,7 @@
 import json
 import requests
 from ddgs import DDGS
-from html.parser import HTMLParser
-
-
-class _TextExtractor(HTMLParser):
-    _SKIP = {"script", "style", "head", "noscript", "svg"}
-
-    def __init__(self):
-        super().__init__()
-        self._parts = []
-        self._skip_depth = 0
-
-    def handle_starttag(self, tag, attrs):
-        if tag in self._SKIP:
-            self._skip_depth += 1
-
-    def handle_endtag(self, tag):
-        if tag in self._SKIP:
-            self._skip_depth = max(0, self._skip_depth - 1)
-
-    def handle_data(self, data):
-        if not self._skip_depth:
-            stripped = data.strip()
-            if stripped:
-                self._parts.append(stripped)
-
-    def get_text(self):
-        return "\n".join(self._parts)
+from utils.html_utils import extract_text_from_html
 
 
 def web_search(query: str, page: int = 1, results_per_page: int = 10) -> str:
@@ -45,9 +19,7 @@ def request_get(url: str) -> str:
     resp.raise_for_status()
     content_type = resp.headers.get("Content-Type", "")
     if "html" in content_type:
-        extractor = _TextExtractor()
-        extractor.feed(resp.text)
-        text = extractor.get_text()
+        text = extract_text_from_html(resp.text)
     else:
         text = resp.text
     return text[:4000]

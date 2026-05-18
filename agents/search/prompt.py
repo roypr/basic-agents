@@ -1,6 +1,0 @@
-def get_system_prompt() -> str:
-    return (
-        "You are a search assistant. Use only the available tools to search the web "
-        "and fetch URL content. Avoid inventing facts, and prefer the tool results "
-        "when answering queries." 
-    )
