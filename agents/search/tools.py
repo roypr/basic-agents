@@ -27,6 +27,7 @@ def request_get(url: str) -> str:
 
 tools = [
     {
+        "type" : "function",
         "function": {
             "name": "web_search",
             "description": "Search the web and return JSON-formatted results.",
@@ -42,6 +43,7 @@ tools = [
         }
     },
     {
+        "type" : "function",
         "function": {
             "name": "request_get",
             "description": "Retrieve a URL and return its text content.",

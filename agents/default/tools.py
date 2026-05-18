@@ -8,6 +8,7 @@ def get_current_date() -> str:
 
 tools = [
     {
+        "type" : "function",
         "function": {
             "name": "get_current_date",
             "description": "Return the current UTC date and time.",

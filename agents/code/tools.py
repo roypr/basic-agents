@@ -9,17 +9,6 @@ from ddgs import DDGS
 from utils.file_utils import FILES_BASE_DIR, safe_path, ensure_base_dir_exists
 from utils.html_utils import extract_text_from_html
 
-
-def validate_args(tool_name: str, args: dict, tools: list) -> None:
-    tool_def = next((tool for tool in tools if tool["function"]["name"] == tool_name), None)
-    if not tool_def:
-        raise ValueError(f"Unknown tool: {tool_name}")
-    required_params = tool_def["function"].get("parameters", {}).get("required", [])
-    missing = [param for param in required_params if param not in args]
-    if missing:
-        raise ValueError(f"Missing required arguments for '{tool_name}': {', '.join(missing)}")
-
-
 def get_current_date() -> str:
     now = datetime.now(timezone.utc)
     return now.strftime("UTC: %Y-%m-%d %H:%M:%S")
@@ -196,13 +185,7 @@ def finish(message: str = "") -> str:
 
 tools = [
     {
-        "function": {
-            "name": "get_current_date",
-            "description": "Return the current UTC date and time.",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        }
-    },
-    {
+        "type" : "function",
         "function": {
             "name": "web_search",
             "description": "Search the web and return JSON-formatted results.",
@@ -218,6 +201,7 @@ tools = [
         }
     },
     {
+        "type" : "function",
         "function": {
             "name": "request_get",
             "description": "Retrieve a public URL and return text content.",
@@ -231,6 +215,7 @@ tools = [
         }
     },
     {
+        "type" : "function",
         "function": {
             "name": "get_all_files",
             "description": "List accessible files under the file base directory.",
@@ -244,6 +229,7 @@ tools = [
         }
     },
     {
+        "type" : "function",
         "function": {
             "name": "file_read",
             "description": "Read a file from the workspace.",
@@ -257,6 +243,7 @@ tools = [
         }
     },
     {
+        "type" : "function",
         "function": {
             "name": "file_write",
             "description": "Write content to a file in the workspace.",
@@ -271,6 +258,7 @@ tools = [
         }
     },
     {
+        "type" : "function",
         "function": {
             "name": "file_edit",
             "description": "Edit text inside a file.",
@@ -286,6 +274,7 @@ tools = [
         }
     },
     {
+        "type" : "function",
         "function": {
             "name": "file_delete",
             "description": "Delete a file or directory within the workspace.",
@@ -300,6 +289,7 @@ tools = [
         }
     },
     {
+        "type" : "function",
         "function": {
             "name": "read_lines",
             "description": "Read a range of lines from a file.",
@@ -315,6 +305,7 @@ tools = [
         }
     },
     {
+        "type" : "function",
         "function": {
             "name": "replace_lines",
             "description": "Replace a range of lines in a file.",
@@ -331,6 +322,7 @@ tools = [
         }
     },
     {
+        "type" : "function",
         "function": {
             "name": "run_command",
             "description": "Run a shell command from the workspace base directory and return stdout/stderr.",
@@ -344,6 +336,7 @@ tools = [
         }
     },
     {
+        "type" : "function",
         "function": {
             "name": "finish",
             "description": "Finish the task and return a final summary message.",
@@ -359,7 +352,6 @@ tools = [
 ]
 
 TOOL_MAP = {
-    "get_current_date": get_current_date,
     "web_search": web_search,
     "request_get": request_get,
     "get_all_files": get_all_files,
