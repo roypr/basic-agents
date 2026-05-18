@@ -4,7 +4,7 @@ from pathlib import Path
 
 
 class SessionDB:
-    def __init__(self, db_path: str = "db/sessions.db"):
+    def __init__(self, db_path: str = "sessions.db"):
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.init_db()

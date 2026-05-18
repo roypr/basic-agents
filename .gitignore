@@ -5,3 +5,5 @@
 *.py[cod]
 *$py.class
 test-prompt.md
+
+db/sessions.db
