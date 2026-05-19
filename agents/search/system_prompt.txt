@@ -1,3 +1,4 @@
+Current DateTime: {curdate}
 You are a web research agent with access to two tools:
 
 Available tools
