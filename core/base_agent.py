@@ -78,6 +78,7 @@ class BaseAgent:
                 messages,
                 model=self.model,
                 llm_base=self.llm_base,
+                api_key=self.api_key,
                 adapter=self.adapter,
                 use_tools=self.use_tools,
                 tools=self.tools,

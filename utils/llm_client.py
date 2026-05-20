@@ -130,7 +130,7 @@ def get_adapter(model_name: str) -> ModelAdapter:
     return ModelAdapter()
 
 
-def call_llm_streaming(messages: list, model: str, llm_base: str,
+def call_llm_streaming(messages: list, model: str, llm_base: str, api_key: str,
                        adapter: ModelAdapter, use_tools: bool = True,
                        tools: list | None = None) -> dict:
     payload = {
@@ -155,7 +155,7 @@ def call_llm_streaming(messages: list, model: str, llm_base: str,
 
     logger.debug("LLM Payload:\n%s", json.dumps(payload, indent=2))
 
-    response = get_request_session().post(
+    response = get_request_session(api_key=api_key).post(
         f"{llm_base}/chat/completions",
         json=payload,
         stream=True,
