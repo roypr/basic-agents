@@ -1,7 +1,8 @@
 from db.session_db import SessionDB
+from utils.http_utils import close_request_session
 from utils.llm_client import call_llm_streaming, get_adapter
 from utils.session_manager import init_session_db
-from utils.tool_executor import execute_tool_calls
+from utils.tool_executor import execute_tool_calls, shutdown_tool_executor
 
 
 SYSTEM_PROMPT = "You are a helpful assistant."
@@ -25,6 +26,7 @@ class BaseAgent:
         self.session_name = session_name
         self.api_key = api_key
         self.use_tools = use_tools
+        self._shutdown_requested = False
 
         self.adapter = get_adapter(model)
         self.session_db = SessionDB()
@@ -70,6 +72,10 @@ class BaseAgent:
             self.session_db.add_message(session_id, "user", query)
 
         for turn in range(self.max_turns):
+            if self._shutdown_requested:
+                print("[Agent] Shutdown requested. Exiting before next turn.")
+                return
+
             print(f"\n--- Turn {turn + 1} ---")
             if turn == 0 and messages[0]["role"] != "system":
                 messages.insert(0, {"role": "system", "content": final_system_prompt})
@@ -105,6 +111,10 @@ class BaseAgent:
                 return
 
             tool_results = execute_tool_calls(tool_calls, self.tool_map, self.tools)
+            if self._shutdown_requested:
+                print("[Agent] Shutdown requested during tool execution. Exiting.")
+                return
+
             for tc, fn_name, fn_args, result in tool_results:
                 print(f"\n[Tool call] {fn_name}({fn_args})")
                 print(f"[Tool result] {result[:100]}{'...' if len(result) > 300 else ''}")
@@ -120,3 +130,12 @@ class BaseAgent:
                 return
 
         print("\n[Max turns reached] No final answer produced.")
+
+    def shutdown(self):
+        """Request agent shutdown and close active HTTP/tool resources."""
+        if self._shutdown_requested:
+            return
+        self._shutdown_requested = True
+        print("[Agent] Shutdown requested. Cleaning up HTTP session and tool executor.")
+        close_request_session()
+        shutdown_tool_executor()

@@ -51,3 +51,15 @@ class TestToolExecutor:
         assert len(results) == 2, "Incorrect number of results returned"
         assert results[0][3] == "tool1 processed data1", "First tool call result is incorrect"
         assert results[1][3] == "tool2 processed data2", "Second tool call result is incorrect"
+
+    def test_shutdown_tool_executor_no_active_executor(self):
+        """Shutdown should be safe when no thread pool is active."""
+        from utils.tool_executor import shutdown_tool_executor
+
+        shutdown_tool_executor()
+
+    def test_close_request_session_no_active_session(self):
+        """Closing the request session should be safe even when none exists."""
+        from utils.http_utils import close_request_session
+
+        close_request_session()

@@ -1,5 +1,6 @@
 import argparse
 import os
+import sys
 from importlib import import_module
 from pathlib import Path
 
@@ -70,7 +71,14 @@ def main():
         session_name=args.session_name,
         api_key=args.api_key,
     )
-    agent.run(combined_query)
+
+    try:
+        agent.run(combined_query)
+    except KeyboardInterrupt:
+        print("\nInterrupted by user. Shutting down gracefully...")
+        sys.exit(0)
+    finally:
+        agent.shutdown()
 
 
 if __name__ == "__main__":
