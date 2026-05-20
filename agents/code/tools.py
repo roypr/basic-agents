@@ -259,17 +259,28 @@ def read_lines(path: str, start_line: int, end_line: int) -> str:
     return ''.join(lines[start_line - 1:end_line])
 
 
-def replace_lines(path: str, start_line: int, end_line: int, new_content: str) -> str:
+def replace_lines(path: str, start_line: int, new_content: str, end_line: int = None) -> str:
     abs_path = _safe_path(path)
     with open(abs_path, 'r', encoding='utf-8') as f:
         lines = f.readlines()
     total_lines = len(lines)
-    if start_line < 1 or end_line < 1 or start_line > end_line or end_line > total_lines:
-        raise ValueError("Invalid line range")
-    result = lines[:start_line - 1] + new_content.splitlines(keepends=True) + lines[end_line:]
+
+    if end_line is None:
+        # Insert mode: inject at start_line, shift rest down
+        if start_line < 1 or start_line > total_lines + 1:
+            raise ValueError("Invalid start_line for insertion")
+        result = lines[:start_line - 1] + new_content.splitlines(keepends=True) + lines[start_line - 1:]
+    else:
+        # Replace mode: original behaviour
+        if start_line < 1 or end_line < 1 or start_line > end_line or end_line > total_lines:
+            raise ValueError("Invalid line range")
+        result = lines[:start_line - 1] + new_content.splitlines(keepends=True) + lines[end_line:]
+
     with open(abs_path, "w", encoding="utf-8") as f:
         f.write(''.join(result))
-    return f"Replaced lines {start_line}-{end_line} in {path}"
+
+    action = "Inserted at" if end_line is None else f"Replaced lines {start_line}-{end_line} in"
+    return f"{action} line {start_line} in {path}"
 
 
 def find_bash():
@@ -460,73 +471,13 @@ tools = [
         "type" : "function",
         "function": {
             "name": "get_all_files",
-            "description": "List accessible files under the file base directory.",
+            "description": "List accessible files inside the base directory.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "base_dir": {"type": "string", "description": "Base path relative to file root"},
                 },
                 "required": [],
-            },
-        }
-    },
-    {
-        "type" : "function",
-        "function": {
-            "name": "file_read",
-            "description": "Read a file from the workspace.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "path": {"type": "string", "description": "Relative file path"},
-                },
-                "required": ["path"],
-            },
-        }
-    },
-    {
-        "type" : "function",
-        "function": {
-            "name": "file_write",
-            "description": "Write content to a file in the workspace.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "path": {"type": "string", "description": "Relative file path"},
-                    "content": {"type": "string", "description": "Text to write"},
-                },
-                "required": ["path", "content"],
-            },
-        }
-    },
-    {
-        "type" : "function",
-        "function": {
-            "name": "file_edit",
-            "description": "Edit text inside a file.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "path": {"type": "string", "description": "Relative file path"},
-                    "new_str": {"type": "string", "description": "Replacement content"},
-                    "old_str": {"type": "string", "description": "Existing text to replace"},
-                },
-                "required": ["path", "new_str"],
-            },
-        }
-    },
-    {
-        "type" : "function",
-        "function": {
-            "name": "file_delete",
-            "description": "Delete a file or directory within the workspace.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "path": {"type": "string", "description": "Relative file or directory path"},
-                    "recursive": {"type": "boolean", "description": "Remove directories recursively"},
-                },
-                "required": ["path"],
             },
         }
     },
@@ -550,7 +501,7 @@ tools = [
         "type" : "function",
         "function": {
             "name": "replace_lines",
-            "description": "Replace a range of lines in a file.",
+            "description": "Insert at perticular line of a file or replace a range of lines in a file.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -559,7 +510,67 @@ tools = [
                     "end_line": {"type": "integer", "description": "Ending line number"},
                     "new_content": {"type": "string", "description": "Replacement text"},
                 },
-                "required": ["path", "start_line", "end_line", "new_content"],
+                "required": ["path", "start_line", "new_content"],
+            },
+        }
+    },
+    {
+        "type" : "function",
+        "function": {
+            "name": "file_read",
+            "description": "Read full content of a file, read_lines preferred.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Relative file path"},
+                },
+                "required": ["path"],
+            },
+        }
+    },
+    {
+        "type" : "function",
+        "function": {
+            "name": "file_write",
+            "description": "Create and write content to a new file.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Relative file path"},
+                    "content": {"type": "string", "description": "Text to write"},
+                },
+                "required": ["path", "content"],
+            },
+        }
+    },
+    {
+        "type" : "function",
+        "function": {
+            "name": "file_edit",
+            "description": "Edit text inside a file, replace_lines preferred over this.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Relative file path"},
+                    "new_str": {"type": "string", "description": "Replacement content"},
+                    "old_str": {"type": "string", "description": "Existing text to replace"},
+                },
+                "required": ["path", "new_str"],
+            },
+        }
+    },
+    {
+        "type" : "function",
+        "function": {
+            "name": "file_delete",
+            "description": "Delete a file or directory.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Relative file or directory path"},
+                    "recursive": {"type": "boolean", "description": "Remove directories recursively"},
+                },
+                "required": ["path"],
             },
         }
     },
@@ -567,7 +578,7 @@ tools = [
         "type" : "function",
         "function": {
             "name": "run_command",
-            "description": "Run a shell command from the workspace base directory and return stdout/stderr.",
+            "description": "Run a shell command from the base directory and return stdout/stderr.",
             "parameters": {
                 "type": "object",
                 "properties": {
