@@ -333,5 +333,24 @@
                 ]
             }
         }
+    },
+    "run_command" : {
+        "type": "function",
+        "function": {
+            "name": "run_command",
+            "description": "Run a shell command from the base directory and return stdout/stderr.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "command": {
+                        "type": "string",
+                        "description": "Shell command to execute"
+                    }
+                },
+                "required": [
+                    "command"
+                ]
+            }
+        }
     }
 }

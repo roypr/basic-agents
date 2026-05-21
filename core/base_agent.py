@@ -11,6 +11,7 @@ SYSTEM_PROMPT = "You are a helpful assistant."
 class BaseAgent:
     def __init__(
         self,
+        name: str = "Agent",
         model: str = "local",
         llm_base: str = "http://localhost:8080",
         max_turns: int = 10,
@@ -19,6 +20,7 @@ class BaseAgent:
         api_key: str = "",
         use_tools: bool = True,
     ):
+        self.name = name
         self.model = model
         self.llm_base = llm_base
         self.max_turns = max_turns
@@ -47,7 +49,7 @@ class BaseAgent:
         raise NotImplementedError("Agent must implement get_tool_map()")
 
     def run(self, query: str):
-        print(f"[Agent] Using adapter: {type(self.adapter).__name__} for model '{self.model}'")
+        print(f"[{self.name}] Using adapter: {type(self.adapter).__name__} for model '{self.model}'")
 
         session_id, session_prompt = init_session_db(
             self.resume_session,
@@ -59,7 +61,7 @@ class BaseAgent:
 
         messages = self.session_db.get_messages(session_id)
         if messages:
-            print(f"[Session] Loaded {len(messages)} messages from session history")
+            print(f"[{self.name}] Session Loaded {len(messages)} messages from session history")
         else:
             messages = [
                 {"role": "system", "content": final_system_prompt},
@@ -73,7 +75,7 @@ class BaseAgent:
 
         for turn in range(self.max_turns):
             if self._shutdown_requested:
-                print("[Agent] Shutdown requested. Exiting before next turn.")
+                print(f"[{self.name}] Shutdown requested. Exiting before next turn. To resume session id {session_id}")
                 return
 
             print(f"\n--- Turn {turn + 1} ---")
@@ -107,12 +109,12 @@ class BaseAgent:
             self.session_db.add_message(session_id, "assistant", content, tool_calls)
 
             if not tool_calls:
-                print(f"\n[Answer]\n{content}")
+                # print(f"\n[Answer]\n{content}")
                 return
 
             tool_results = execute_tool_calls(tool_calls, self.tool_map, self.tools)
             if self._shutdown_requested:
-                print("[Agent] Shutdown requested during tool execution. Exiting.")
+                print(f"[{self.name}] Shutdown requested during tool execution. Exiting. To resume session id {session_id}")
                 return
 
             for tc, fn_name, fn_args, result in tool_results:
@@ -124,16 +126,16 @@ class BaseAgent:
                 self.session_db.add_message(session_id, "tool", result)
 
             if any(fn_name == "finish" for _, fn_name, _, _ in tool_results):
-                print("\n[Agent] Finish tool called — stopping loop.")
+                print(f"\n[{self.name}] Finish tool called — stopping loop. To resume session id {session_id}")
                 return
 
-        print("\n[Max turns reached] No final answer produced.")
+        print(f"\n[{self.name}] Max turns reached No final answer produced. To resume session id {session_id}")
 
     def shutdown(self):
         """Request agent shutdown and close active HTTP/tool resources."""
         if self._shutdown_requested:
             return
         self._shutdown_requested = True
-        print("[Agent] Shutdown requested. Cleaning up HTTP session and tool executor.")
+        # print("[{self.name}] Shutdown requested. Cleaning up HTTP session and tool executor.")
         close_request_session()
         shutdown_tool_executor()

@@ -5,6 +5,9 @@ from .tools import tools, TOOL_MAP
 
 
 class PlanAgent(BaseAgent):
+    def __init__(self, name: str = "PlanAgent", **kwargs):
+        super().__init__(name=name, **kwargs)
+
     def get_system_prompt(self) -> str:
         prompt_file = Path(__file__).resolve().parent / "system_prompt.txt"
         if prompt_file.exists():

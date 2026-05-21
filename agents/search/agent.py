@@ -5,6 +5,9 @@ from .tools import tools, TOOL_MAP
 from datetime import datetime, timezone
 
 class SearchAgent(BaseAgent):
+    def __init__(self, name: str = "SearchAgent", **kwargs):
+        super().__init__(name=name, **kwargs)
+        
     def get_system_prompt(self) -> str:
         now = datetime.now(timezone.utc)
         curdate = now.strftime("UTC: %Y-%m-%d %H:%M:%S")
