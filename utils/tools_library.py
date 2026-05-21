@@ -67,6 +67,8 @@ def get_all_files(base_dir: str = ".") -> str:
         if any(part.startswith('.') for part in rel_parts):
             continue
         all_files.append(rel.as_posix())
+
+    print(f"[Tool: Get Files] {len(all_files)} Files found")
     return json.dumps(all_files)
 
 
@@ -108,17 +110,20 @@ def file_edit(path: str, new_str: str, old_str: str = None) -> str:
 
 
 def file_delete(path: str, recursive: bool = False) -> str:
+    result = ""
     abs_path = safe_path(path)
     if not abs_path.exists():
-        return f"Error: {path} does not exist"
+        result = f"Error: {path} does not exist"
     if abs_path.is_dir():
         if recursive:
             shutil.rmtree(abs_path)
-            return f"Deleted directory {path} and all contents"
+            result = f"Deleted directory {path} and all contents"
         abs_path.rmdir()
-        return f"Deleted empty directory {path}"
+        result = f"Deleted empty directory {path}"
     abs_path.unlink()
-    return f"Deleted file {path}"
+    result = f"Deleted file {path}"
+    print(f"[Tool: File Delete] {result}")
+    return result
 
 def read_lines(path: str, start_line: int, end_line: int) -> str:
     result = ""
@@ -142,10 +147,6 @@ def replace_lines(path: str, start_line: int, new_content: str, end_line: int = 
         print(f"[Tool: Replace lines] Error: {e}")
         result = str(e)
     return result
-
-# =========================================================
-# Glob implementation
-# =========================================================
 
 def glob_search(
     pattern: str,
@@ -197,95 +198,13 @@ def glob_search(
         reverse=True
     )
 
-    return [
+    results = [
         m["path"]
         for m in matches[:limit]
     ]
 
-
-# =========================================================
-# Grep implementation (ripgrep-backed)
-# =========================================================
-
-def grep_search(
-    pattern: str,
-    path: str | None = None,
-    glob: str | None = None,
-    type: str | None = None,
-    output_mode: str = "files_with_matches",
-    case_insensitive: bool = False,
-    multiline: bool = False,
-    context: int = 0,
-    line_numbers: bool = True,
-    head_limit: int = 100
-):
-    """
-    ripgrep-powered content search.
-    """
-
-    base = safe_path(path)
-
-    cmd = ["rg"]
-
-    # Output modes
-    if output_mode == "files_with_matches":
-        cmd.append("-l")
-
-    elif output_mode == "count":
-        cmd.append("-c")
-
-    # Context
-    if context > 0:
-        cmd.extend(["-C", str(context)])
-
-    # Line numbers
-    if line_numbers and output_mode == "content":
-        cmd.append("-n")
-
-    # Case insensitive
-    if case_insensitive:
-        cmd.append("-i")
-
-    # Multiline
-    if multiline:
-        cmd.extend([
-            "-U",
-            "--multiline-dotall"
-        ])
-
-    # Glob filter
-    if glob:
-        cmd.extend(["--glob", glob])
-
-    # Type filter
-    if type:
-        cmd.extend(["--type", type])
-
-    cmd.append(pattern)
-    cmd.append(str(base))
-
-    try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace"
-        )
-
-        output = result.stdout.strip()
-
-        if not output:
-            return []
-
-        lines = output.splitlines()
-
-        return lines[:head_limit]
-
-    except FileNotFoundError:
-        raise RuntimeError(
-            "ripgrep (rg) is not installed"
-        )
+    print(f"[Tool: Glob] {len(results)} matches")
+    return results
 
 def find_bash():
     if os.name != "nt":
@@ -341,3 +260,81 @@ def run_command(command: str) -> str:
         return "Error: command timed out after 30 seconds."
     except Exception as e:
         return f"Error running command: {e}"
+    
+def grep_search(
+    pattern: str,
+    path: str | None = None,
+    glob: str | None = None,
+    type: str | None = None,
+    output_mode: str = "files_with_matches",
+    case_insensitive: bool = False,
+    multiline: bool = False,
+    context: int = 0,
+    line_numbers: bool = True,
+    head_limit: int = 100
+):
+    """
+    ripgrep-powered content search.
+    """
+
+    ensure_base_dir_exists()                     # ← match run_command
+    base = safe_path(path)
+
+    cmd = ["rg"]
+
+    if output_mode == "files_with_matches":
+        cmd.append("-l")
+    elif output_mode == "count":
+        cmd.append("-c")
+
+    if context > 0:
+        cmd.extend(["-C", str(context)])
+
+    if line_numbers and output_mode == "content":
+        cmd.append("-n")
+
+    if case_insensitive:
+        cmd.append("-i")
+
+    if multiline:
+        cmd.extend(["-U", "--multiline-dotall"])
+
+    if glob:
+        cmd.extend(["--glob", glob])
+
+    if type:
+        cmd.extend(["--type", type])
+
+    cmd.append(pattern)
+    cmd.append(str(base))
+
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            cwd=FILES_BASE_DIR,                  # ← match run_command
+            timeout=30,                          # ← match run_command
+        )
+
+        # rg exit codes: 0 = matches found, 1 = no matches, 2 = error
+        if result.returncode == 2:               # ← distinguish real errors
+            err = result.stderr.strip()
+            return f"Error: {err}" if err else "Error: rg exited with code 2"
+
+        output = result.stdout.strip()
+
+        if not output:
+            return []
+
+        lines = output.splitlines()
+        return lines[:head_limit]
+
+    except subprocess.TimeoutExpired:            # ← match run_command
+        return "Error: grep search timed out after 30 seconds."
+    except FileNotFoundError:
+        return "Error: ripgrep (rg) is not installed."  # ← return, don't raise
+    except Exception as e:
+        return f"Error running grep search: {e}"        # ← match run_command
