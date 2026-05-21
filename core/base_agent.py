@@ -116,7 +116,7 @@ class BaseAgent:
                 return
 
             for tc, fn_name, fn_args, result in tool_results:
-                print(f"\n[Tool call] {fn_name}({fn_args})")
+                print(f"\n[Tool call] {fn_name}")
                 print(f"[Tool result] {result[:100]}{'...' if len(result) > 300 else ''}")
                 messages.append({
                     "role": "tool",

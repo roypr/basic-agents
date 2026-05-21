@@ -89,5 +89,66 @@ def load_tool_definition() -> dict:
         raise FileNotFoundError("The file 'tool_definition.json' was not found.")
     except json.JSONDecodeError as e:
         raise json.JSONDecodeError(f"Error decoding JSON from 'tool_definition.json': {e}") from e
-        
-load_tool_definition()
+    
+def _file_read(path: str) -> str:
+    abs_path = safe_path(path)
+    with open(abs_path, "r", encoding="utf-8") as f:
+        return f.read()
+
+def _file_write(path: str, content: str):
+    abs_path = safe_path(path)
+    abs_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(abs_path, "w", encoding="utf-8") as f:
+        f.write(content)
+
+def _file_edit(path: str, new_str: str, old_str: str = None):
+    abs_path = safe_path(path)
+    with open(abs_path, "r", encoding="utf-8") as f:
+        original = f.read()
+    if old_str is None or old_str not in original:
+        if original and not original.endswith("\n"):
+            updated = original + "\n" + new_str
+        else:
+            updated = original + new_str
+    else:
+        updated = original.replace(old_str, new_str, 1)
+    with open(abs_path, "w", encoding="utf-8") as f:
+        f.write(updated)
+
+
+def _read_lines(path: str, start_line: int, end_line: int) -> str:
+    abs_path = safe_path(path)
+    if not Path(abs_path).exists():
+        raise FileNotFoundError(f"File not found: {abs_path}")
+    with open(abs_path, 'r', encoding='utf-8') as f:
+        lines = f.readlines()
+    total_lines = len(lines)
+    if start_line < 1 or end_line < 1:
+        raise ValueError("Line numbers must be positive integers.")
+    if start_line > end_line:
+        raise ValueError("Start line must be less than or equal to end line.")
+    if start_line > total_lines or end_line > total_lines:
+        raise ValueError(f"Requested line range exceeds file length ({total_lines} lines).")
+    return ''.join(lines[start_line - 1:end_line])
+
+
+def _replace_lines(path: str, start_line: int, new_content: str, end_line: int = None) -> str:
+    abs_path = safe_path(path)
+    with open(abs_path, 'r', encoding='utf-8') as f:
+        lines = f.readlines()
+    total_lines = len(lines)
+
+    if end_line is None:
+        if start_line < 1 or start_line > total_lines + 1:
+            raise ValueError("Invalid start_line for insertion")
+        result = lines[:start_line - 1] + new_content.splitlines(keepends=True) + lines[start_line - 1:]
+    else:
+        if start_line < 1 or end_line < 1 or start_line > end_line or end_line > total_lines:
+            raise ValueError("Invalid line range")
+        result = lines[:start_line - 1] + new_content.splitlines(keepends=True) + lines[end_line:]
+
+    with open(abs_path, "w", encoding="utf-8") as f:
+        f.write(''.join(result))
+
+    action = "Inserted at" if end_line is None else f"Replaced lines {start_line}-{end_line} in"
+    return f"{action} line {start_line} in {path}"

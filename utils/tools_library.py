@@ -8,20 +8,32 @@ from datetime import datetime, timezone
 from pathlib import Path
 import shutil
 from .html_utils import extract_text_from_html
-from .file_utils import safe_path, FILES_BASE_DIR, ensure_base_dir_exists
+from .file_utils import (safe_path, FILES_BASE_DIR, ensure_base_dir_exists, 
+                         _file_read, _file_write, _file_edit,
+                         _read_lines, _replace_lines)
 
 def get_current_date() -> str:
     now = datetime.now(timezone.utc)
-    return now.strftime("UTC: %Y-%m-%d %H:%M:%S")
+    result = now.strftime("UTC: %Y-%m-%d %H:%M:%S")
+    print(f"[Tool: Date] {result}")
+    return result
 
 def web_search(query: str, page: int = 1, results_per_page: int = 10) -> str:
     with DDGS() as ddgs:
         all_results = list(ddgs.text(query, max_results=page * results_per_page))
     page_results = all_results[(page - 1) * results_per_page: page * results_per_page]
-    return json.dumps([
+    results = [
         {"title": r["title"], "snippet": r["body"], "href": r["href"]}
         for r in page_results
-    ])
+    ]
+    print(f"[Tool: Web Search] Results: {len(results)}")
+    for r in results:
+        snippet_preview = r["snippet"].replace("\n", " ").strip()
+        if len(snippet_preview) > 100:
+            snippet_preview = snippet_preview[:100].rstrip() + "..."
+        print(f"{r['title']}: {snippet_preview}")
+
+    return json.dumps(results)
 
 
 def request_get(url: str) -> str:
@@ -32,9 +44,13 @@ def request_get(url: str) -> str:
         text = extract_text_from_html(resp.text)
     else:
         text = resp.text
+    
+    print(f"[Tool: Web Page] Url: {url}")
     return text[:4000]
 
 def finish(message: str = "") -> str:
+    print(f"[Finish] {message}")
+    
     return message or "Done."
 
 def get_all_files(base_dir: str = ".") -> str:
@@ -55,30 +71,40 @@ def get_all_files(base_dir: str = ".") -> str:
 
 
 def file_read(path: str) -> str:
-    abs_path = safe_path(path)
-    with open(abs_path, "r", encoding="utf-8") as f:
-        return f.read()
+    result = ""
 
+    try:
+        result = _file_read(path)
+        print(f"[Tool: File read] path: {path}")
+    except Exception as e:
+        print(f"[Tool: File read] Error: {e}")
+        result = str(e)
+    return result
 
 def file_write(path: str, content: str) -> str:
-    abs_path = safe_path(path)
-    abs_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(abs_path, "w", encoding="utf-8") as f:
-        f.write(content)
-    return f"Wrote {len(content)} chars to {path}"
+    result = ""
+
+    try:
+        _file_write(path, content)
+        result = f"Written to {path}"
+        print(f"[Tool: File write] path: {path}")
+    except Exception as e:
+        print(f"[Tool: File write] Error: {e}")
+        result = str(e)
+    return result
 
 
 def file_edit(path: str, new_str: str, old_str: str = None) -> str:
-    abs_path = safe_path(path)
-    with open(abs_path, "r", encoding="utf-8") as f:
-        original = f.read()
-    if old_str is None or old_str not in original:
-        updated = f"\n{new_str}"
-    else:
-        updated = original.replace(old_str, new_str, 1)
-    with open(abs_path, "w", encoding="utf-8") as f:
-        f.write(updated)
-    return f"Edited {path}"
+    result = ""
+
+    try:
+        _file_edit(path, new_str, old_str)
+        result = f"Edited {path}"
+        print(f"[Tool: File Edit] path: {path}")
+    except Exception as e:
+        print(f"[Tool: File Edit] Error: {e}")
+        result = str(e)
+    return result
 
 
 def file_delete(path: str, recursive: bool = False) -> str:
@@ -95,43 +121,27 @@ def file_delete(path: str, recursive: bool = False) -> str:
     return f"Deleted file {path}"
 
 def read_lines(path: str, start_line: int, end_line: int) -> str:
-    abs_path = safe_path(path)
-    if not abs_path.exists():
-        raise FileNotFoundError(f"File not found: {abs_path}")
-    with open(abs_path, 'r', encoding='utf-8') as f:
-        lines = f.readlines()
-    total_lines = len(lines)
-    if start_line < 1 or end_line < 1:
-        raise ValueError("Line numbers must be positive integers.")
-    if start_line > end_line:
-        raise ValueError("Start line must be less than or equal to end line.")
-    if start_line > total_lines or end_line > total_lines:
-        raise ValueError(f"Requested line range exceeds file length ({total_lines} lines).")
-    return ''.join(lines[start_line - 1:end_line])
+    result = ""
+
+    try:
+        result = _read_lines(path, start_line, end_line)
+        print(f"[Tool: Read lines] path: {path} lines: {start_line}-{end_line}")
+    except Exception as e:
+        print(f"[Tool: Read lines] Error: {e}")
+        result = str(e)
+    return result
 
 
 def replace_lines(path: str, start_line: int, new_content: str, end_line: int = None) -> str:
-    abs_path = safe_path(path)
-    with open(abs_path, 'r', encoding='utf-8') as f:
-        lines = f.readlines()
-    total_lines = len(lines)
+    result = ""
 
-    if end_line is None:
-        # Insert mode: inject at start_line, shift rest down
-        if start_line < 1 or start_line > total_lines + 1:
-            raise ValueError("Invalid start_line for insertion")
-        result = lines[:start_line - 1] + new_content.splitlines(keepends=True) + lines[start_line - 1:]
-    else:
-        # Replace mode: original behaviour
-        if start_line < 1 or end_line < 1 or start_line > end_line or end_line > total_lines:
-            raise ValueError("Invalid line range")
-        result = lines[:start_line - 1] + new_content.splitlines(keepends=True) + lines[end_line:]
-
-    with open(abs_path, "w", encoding="utf-8") as f:
-        f.write(''.join(result))
-
-    action = "Inserted at" if end_line is None else f"Replaced lines {start_line}-{end_line} in"
-    return f"{action} line {start_line} in {path}"
+    try:
+        result = _replace_lines(path, start_line, new_content, end_line)
+        print(f"[Tool: Replace lines] path: {path} start: {start_line} end: {end_line}")
+    except Exception as e:
+        print(f"[Tool: Replace lines] Error: {e}")
+        result = str(e)
+    return result
 
 # =========================================================
 # Glob implementation
