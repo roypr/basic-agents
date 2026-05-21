@@ -1,0 +1,337 @@
+{
+    "get_current_date" : {
+        "type": "function",
+        "function": {
+            "name": "get_current_date",
+            "description": "Return the current UTC date and time.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": []
+            }
+        }
+    },
+    "web_search" : {
+        "type": "function",
+        "function": {
+            "name": "web_search",
+            "description": "Search the web and return JSON-formatted results.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Search query"
+                    },
+                    "page": {
+                        "type": "integer",
+                        "description": "Page number"
+                    },
+                    "results_per_page": {
+                        "type": "integer",
+                        "description": "Results count per page"
+                    }
+                },
+                "required": [
+                    "query"
+                ]
+            }
+        }
+    },
+    "request_get" : {
+        "type": "function",
+        "function": {
+            "name": "request_get",
+            "description": "Retrieve a URL and return its text content.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "URL to fetch"
+                    }
+                },
+                "required": [
+                    "url"
+                ]
+            }
+        }
+    },
+    "get_all_files" : {
+        "type": "function",
+        "function": {
+            "name": "get_all_files",
+            "description": "List accessible files inside the base directory.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "base_dir": {
+                        "type": "string",
+                        "description": "Base path relative to file root"
+                    }
+                },
+                "required": []
+            }
+        }
+    },
+    "read_lines" : {
+        "type": "function",
+        "function": {
+            "name": "read_lines",
+            "description": "Read a range of lines from a file.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Relative file path"
+                    },
+                    "start_line": {
+                        "type": "integer",
+                        "description": "Starting line number"
+                    },
+                    "end_line": {
+                        "type": "integer",
+                        "description": "Ending line number"
+                    }
+                },
+                "required": [
+                    "path",
+                    "start_line",
+                    "end_line"
+                ]
+            }
+        }
+    },
+    "replace_lines" : {
+        "type": "function",
+        "function": {
+            "name": "replace_lines",
+            "description": "Insert at perticular line of a file or replace a range of lines in a file.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Relative file path"
+                    },
+                    "start_line": {
+                        "type": "integer",
+                        "description": "Starting line number"
+                    },
+                    "end_line": {
+                        "type": "integer",
+                        "description": "Ending line number"
+                    },
+                    "new_content": {
+                        "type": "string",
+                        "description": "Replacement text"
+                    }
+                },
+                "required": [
+                    "path",
+                    "start_line",
+                    "new_content"
+                ]
+            }
+        }
+    },
+    "file_read" : {
+        "type": "function",
+        "function": {
+            "name": "file_read",
+            "description": "Read full content of a file, read_lines preferred.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Relative file path"
+                    }
+                },
+                "required": [
+                    "path"
+                ]
+            }
+        }
+    },
+    "file_write" : {
+        "type": "function",
+        "function": {
+            "name": "file_write",
+            "description": "Create and write content to a new file.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Relative file path"
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "Text to write"
+                    }
+                },
+                "required": [
+                    "path",
+                    "content"
+                ]
+            }
+        }
+    },
+    "file_edit" : {
+        "type": "function",
+        "function": {
+            "name": "file_edit",
+            "description": "Edit text inside a file, replace_lines preferred over this.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Relative file path"
+                    },
+                    "new_str": {
+                        "type": "string",
+                        "description": "Replacement content"
+                    },
+                    "old_str": {
+                        "type": "string",
+                        "description": "Existing text to replace"
+                    }
+                },
+                "required": [
+                    "path",
+                    "new_str"
+                ]
+            }
+        }
+    },
+    "file_delete" : {
+        "type": "function",
+        "function": {
+            "name": "file_delete",
+            "description": "Delete a file or directory.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Relative file or directory path"
+                    },
+                    "recursive": {
+                        "type": "boolean",
+                        "description": "Remove directories recursively"
+                    }
+                },
+                "required": [
+                    "path"
+                ]
+            }
+        }
+    },
+    "finish" : {
+        "type": "function",
+        "function": {
+            "name": "finish",
+            "description": "Finish the task and return a final summary message.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "message": {
+                        "type": "string",
+                        "description": "Optional final message"
+                    }
+                }
+            }
+        }
+    },
+    "glob_search" : {
+        "type": "function",
+        "function": {
+            "name": "glob_search",
+            "description": "Fast file pattern matching tool. Supports glob patterns like '**/*.py' or 'src/**/*.ts'. Returns matching file paths sorted by modification time.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "pattern": {
+                        "type": "string",
+                        "description": "Glob pattern to match files"
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": "Base directory to search"
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum number of results",
+                        "default": 100
+                    }
+                },
+                "required": [
+                    "pattern"
+                ]
+            }
+        }
+    },
+    "grep_search" : {
+        "type": "function",
+        "function": {
+            "name": "grep_search",
+            "description": "Search file contents using ripgrep. Supports regex patterns, file globs, type filtering, context lines, and multiple output modes.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "pattern": {
+                        "type": "string",
+                        "description": "Regex pattern to search for"
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": "Directory or file to search"
+                    },
+                    "glob": {
+                        "type": "string",
+                        "description": "Glob filter like '*.py'"
+                    },
+                    "type": {
+                        "type": "string",
+                        "description": "File type filter like 'py', 'js'"
+                    },
+                    "output_mode": {
+                        "type": "string",
+                        "enum": [
+                            "content",
+                            "files_with_matches",
+                            "count"
+                        ],
+                        "default": "files_with_matches"
+                    },
+                    "case_insensitive": {
+                        "type": "boolean",
+                        "default": "False"
+                    },
+                    "multiline": {
+                        "type": "boolean",
+                        "default": "False"
+                    },
+                    "context": {
+                        "type": "integer",
+                        "default": 0
+                    },
+                    "line_numbers": {
+                        "type": "boolean",
+                        "default": "True"
+                    },
+                    "head_limit": {
+                        "type": "integer",
+                        "default": 100
+                    }
+                },
+                "required": [
+                    "pattern"
+                ]
+            }
+        }
+    }
+}

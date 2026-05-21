@@ -1,4 +1,5 @@
 import os
+import json
 from pathlib import Path
 from config import FILES_BASE_DIR
 
@@ -78,3 +79,15 @@ def build_query(query: str, include_path: str | None, line_range):
     if query and query.strip():
         return f"{query.strip()}\n\n{include_block}"
     return include_block
+
+def load_tool_definition() -> dict:
+    json_path = Path("utils/tool_definition.json").resolve()
+    try:
+        with open(json_path, "r") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        raise FileNotFoundError("The file 'tool_definition.json' was not found.")
+    except json.JSONDecodeError as e:
+        raise json.JSONDecodeError(f"Error decoding JSON from 'tool_definition.json': {e}") from e
+        
+load_tool_definition()
