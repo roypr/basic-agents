@@ -4,12 +4,12 @@ from pathlib import Path
 from config import FILES_BASE_DIR
 
 
-def safe_path(path: str) -> str:
+def safe_path(path: str) -> Path:
     base_dir = Path(FILES_BASE_DIR).resolve()
     candidate = (base_dir / path).resolve()
     if base_dir not in [candidate, *candidate.parents]:
         raise ValueError(f"Path '{path}' escapes the allowed base directory")
-    return str(candidate)
+    return candidate
 
 
 def ensure_base_dir_exists() -> None:

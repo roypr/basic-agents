@@ -263,7 +263,7 @@ def run_command(command: str) -> str:
     except Exception as e:
         result = f"Error running command: {e}"
     
-    print(f"[Tool: Run Command] {result}")
+    print(f"[Tool: Run Command] {command} \n {result}")
     return result
     
 def grep_search(
