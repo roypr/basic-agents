@@ -239,6 +239,8 @@ def run_command(command: str) -> str:
         cmd = command
         shell = True
 
+    result = ""
+
     try:
         result = subprocess.run(
             cmd,
@@ -255,11 +257,14 @@ def run_command(command: str) -> str:
             output.append(f"stderr:\n{result.stderr.strip()}")
         if result.returncode != 0:
             output.append(f"exit code: {result.returncode}")
-        return "\n".join(output) if output else "(command produced no output)"
+        result = "\n".join(output) if output else "(command produced no output)"
     except subprocess.TimeoutExpired:
-        return "Error: command timed out after 30 seconds."
+        result = "Error: command timed out after 30 seconds."
     except Exception as e:
-        return f"Error running command: {e}"
+        result = f"Error running command: {e}"
+    
+    print(f"[Tool: Run Command] {result}")
+    return result
     
 def grep_search(
     pattern: str,
@@ -308,6 +313,8 @@ def grep_search(
     cmd.append(pattern)
     cmd.append(str(base))
 
+    result = ""
+
     try:
         result = subprocess.run(
             cmd,
@@ -330,11 +337,14 @@ def grep_search(
             return []
 
         lines = output.splitlines()
-        return lines[:head_limit]
+        result = lines[:head_limit]
 
     except subprocess.TimeoutExpired:            # ← match run_command
-        return "Error: grep search timed out after 30 seconds."
+        result = "Error: grep search timed out after 30 seconds."
     except FileNotFoundError:
-        return "Error: ripgrep (rg) is not installed."  # ← return, don't raise
+        result = "Error: ripgrep (rg) is not installed."  # ← return, don't raise
     except Exception as e:
-        return f"Error running grep search: {e}"        # ← match run_command
+        result = f"Error running grep search: {e}"        # ← match run_command
+
+    print(f"[Tool: Grep] {result}")
+    return result
