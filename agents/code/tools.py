@@ -99,7 +99,7 @@ def syntax_check_file(rel_path: str) -> str | None:
     except Exception as e:
         return f"Syntax check failed: {e}"
 
-def file_write_with_syntax_check(path: str, content: str) -> str:
+def file_write(path: str, content: str) -> str:
     result = ""
 
     try:
@@ -120,7 +120,7 @@ def file_write_with_syntax_check(path: str, content: str) -> str:
         result = str(e)
     return result
 
-def file_edit_with_syntax_check(path: str, new_str: str, old_str: str = None) -> str:
+def file_edit(path: str, new_str: str, old_str: str = None) -> str:
     result = ""
 
     try:
@@ -141,7 +141,7 @@ def file_edit_with_syntax_check(path: str, new_str: str, old_str: str = None) ->
         result = str(e)
     return result
 
-def replace_lines_with_syntax_check(path: str, start_line: int, new_content: str, end_line: int = None) -> str:
+def replace_lines(path: str, start_line: int, new_content: str, end_line: int = None) -> str:
     result = ""
 
     try:
@@ -177,7 +177,7 @@ tools = [
     {
         "type": "function",
         "function": {
-            "name": "file_write_with_syntax_check",
+            "name": "file_write",
             "description": "Create and write content to a new file. For Py, JS, TS, PHP files it will run quick syntax check",
             "parameters": {
                 "type": "object",
@@ -269,11 +269,11 @@ TOOL_MAP = {
     "request_get": request_get,
     "get_all_files": get_all_files,
     "file_read": file_read,
-    "file_write_with_syntax_check": file_write_with_syntax_check,
-    "file_edit_with_syntax_check": file_edit_with_syntax_check,
+    "file_write": file_write,
+    "file_edit": file_edit,
     "file_delete": file_delete,
     "read_lines": read_lines,
-    "replace_lines_with_syntax_check": replace_lines_with_syntax_check,
+    "replace_lines": replace_lines,
     "run_command": run_command,
     "finish": finish,
 }
