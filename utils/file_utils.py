@@ -1,5 +1,6 @@
 import os
 import json
+import unicodedata
 from pathlib import Path
 from config import FILES_BASE_DIR
 
@@ -50,6 +51,8 @@ def read_file_section(path: str, line_range):
         raise FileNotFoundError(f"Included file not found: {path}")
 
     text = file_path.read_text(encoding="utf-8")
+    text = unicodedata.normalize("NFKC", text)
+    
     if line_range is None:
         return text
 
@@ -123,11 +126,15 @@ def _read_lines(path: str, start_line: int, end_line: int) -> str:
     with open(abs_path, 'r', encoding='utf-8') as f:
         lines = f.readlines()
     total_lines = len(lines)
+
+    if(end_line > total_lines):
+        end_line = total_lines
+
     if start_line < 1 or end_line < 1:
         raise ValueError("Line numbers must be positive integers.")
     if start_line > end_line:
         raise ValueError("Start line must be less than or equal to end line.")
-    if start_line > total_lines or end_line > total_lines:
+    if start_line > total_lines:
         raise ValueError(f"Requested line range exceeds file length ({total_lines} lines).")
     return ''.join(lines[start_line - 1:end_line])
 
