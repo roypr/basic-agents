@@ -81,7 +81,7 @@ class BaseAgent:
             print(f"\n--- Turn {turn + 1} ---")
             if turn == 0 and messages[0]["role"] != "system":
                 messages.insert(0, {"role": "system", "content": final_system_prompt})
-
+            
             msg = call_llm_streaming(
                 messages,
                 model=self.model,
@@ -118,12 +118,14 @@ class BaseAgent:
                 return
 
             for tc, fn_name, fn_args, result in tool_results:
+                print(result)
+                tool_call_id = tc.get("id")
                 messages.append({
                     "role": "tool",
-                    "tool_call_id": tc.get("id"),
+                    "tool_call_id": tool_call_id,
                     "content": result,
                 })
-                self.session_db.add_message(session_id, "tool", result)
+                self.session_db.add_message(session_id, "tool", result, tool_call_id=tool_call_id)
 
             if any(fn_name == "finish" for _, fn_name, _, _ in tool_results):
                 print(f"\n[{self.name}] Finish tool called — stopping loop. To resume session id {session_id}")

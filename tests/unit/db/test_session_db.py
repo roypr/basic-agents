@@ -41,6 +41,21 @@ class TestSessionDB:
         assert messages[1]["content"] == "hi"
         assert messages[1]["tool_calls"] == [{"tool": "search"}]
 
+    def test_session_db_tool_message_tool_call_id(self, tmp_path):
+        """Test tool message persistence with tool_call_id."""
+        session_db = SessionDB(str(tmp_path / "sessions.db"))
+        session_id = session_db.create_session("test-session")
+
+        session_db.add_message(session_id, "tool", "tool output", tool_call_id="abc123")
+
+        messages = session_db.get_messages(session_id)
+        assert len(messages) == 1
+        assert messages[0] == {
+            "role": "tool",
+            "content": "tool output",
+            "tool_call_id": "abc123",
+        }
+
     def test_session_db_delete_session(self, tmp_path):
         """Test soft-deleting a session."""
         session_db = SessionDB(str(tmp_path / "sessions.db"))

@@ -27,6 +27,7 @@ class SessionDB:
                 "role TEXT NOT NULL, "
                 "content TEXT NOT NULL, "
                 "tool_calls TEXT, "
+                "tool_call_id TEXT, "
                 "timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP, "
                 "FOREIGN KEY (session_id) REFERENCES sessions (id))"
             )
@@ -38,6 +39,10 @@ class SessionDB:
                 "CREATE INDEX IF NOT EXISTS idx_sessions_active "
                 "ON sessions(is_active)"
             )
+            cursor = conn.execute("PRAGMA table_info(messages)")
+            columns = [row[1] for row in cursor.fetchall()]
+            if "tool_call_id" not in columns:
+                conn.execute("ALTER TABLE messages ADD COLUMN tool_call_id TEXT")
             conn.commit()
 
     def create_session(self, name: str, system_prompt: str = "") -> int:
@@ -81,13 +86,13 @@ class SessionDB:
             conn.commit()
             return cursor.rowcount > 0
 
-    def add_message(self, session_id: int, role: str, content: str, tool_calls=None):
+    def add_message(self, session_id: int, role: str, content: str, tool_calls=None, tool_call_id=None):
         tool_calls_json = json.dumps(tool_calls) if tool_calls else None
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.execute(
-                "INSERT INTO messages (session_id, role, content, tool_calls) "
-                "VALUES (?, ?, ?, ?)",
-                (session_id, role, content, tool_calls_json)
+                "INSERT INTO messages (session_id, role, content, tool_calls, tool_call_id) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (session_id, role, content, tool_calls_json, tool_call_id)
             )
             conn.execute(
                 "UPDATE sessions SET updated_at = CURRENT_TIMESTAMP WHERE id = ?",
@@ -100,7 +105,7 @@ class SessionDB:
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.execute(
-                "SELECT role, content, tool_calls, timestamp "
+                "SELECT role, content, tool_calls, tool_call_id, timestamp "
                 "FROM messages "
                 "WHERE session_id = ? "
                 "ORDER BY timestamp ASC",
@@ -117,5 +122,7 @@ class SessionDB:
                         message["tool_calls"] = json.loads(row["tool_calls"])
                     except json.JSONDecodeError:
                         message["tool_calls"] = None
+                if row["tool_call_id"] is not None:
+                    message["tool_call_id"] = row["tool_call_id"]
                 messages.append(message)
             return messages
