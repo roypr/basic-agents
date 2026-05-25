@@ -248,6 +248,8 @@ def run_command(command: str) -> str:
             cwd=FILES_BASE_DIR,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=30,
         )
         output = []
