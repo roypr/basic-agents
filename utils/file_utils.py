@@ -145,19 +145,30 @@ def _replace_lines(path: str, start_line: int, new_content: str, end_line: int =
         lines = f.readlines()
     total_lines = len(lines)
 
+    # Ensure new_content always ends with a newline so the next line isn't merged
+    if new_content and not new_content.endswith('\n'):
+        new_content += '\n'
+    new_lines = new_content.splitlines(keepends=True)
+
     if end_line is None:
-        if start_line < 1 or start_line > total_lines + 1:
-            raise ValueError("Invalid start_line for insertion")
-        result = lines[:start_line - 1] + new_content.splitlines(keepends=True) + lines[start_line - 1:]
+        # Insert AFTER start_line (pass 0 to prepend before line 1)
+        if start_line < 0 or start_line > total_lines:
+            raise ValueError(f"start_line {start_line} out of range (0–{total_lines})")
+        result = lines[:start_line] + new_lines + lines[start_line:]
+        action = f"Inserted after line {start_line} in"
     else:
-        if start_line < 1 or end_line < 1 or start_line > end_line or end_line > total_lines:
-            raise ValueError("Invalid line range")
-        result = lines[:start_line - 1] + new_content.splitlines(keepends=True) + lines[end_line:]
+        # Clamp end_line rather than hard-rejecting valid edge cases
+        end_line = min(end_line, total_lines)
+        if start_line < 1 or end_line < 1 or start_line > end_line:
+            raise ValueError(f"Invalid line range {start_line}-{end_line}")
+        result = lines[:start_line - 1] + new_lines + lines[end_line:]
+        action = f"Replaced lines {start_line}-{end_line} in"
 
     with open(abs_path, "w", encoding="utf-8") as f:
         f.write(''.join(result))
 
-    action = "Inserted at" if end_line is None else f"Replaced lines {start_line}-{end_line} in"
-    return f"{action} line {start_line} in {path}"
+    new_line_count = len(new_lines)
+    total_after = len(result)
+    return f"{action} {path} ({new_line_count} lines written, file now {total_after} lines)"
 
     
