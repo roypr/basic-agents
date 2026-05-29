@@ -5,11 +5,13 @@ from pathlib import Path
 from config import FILES_BASE_DIR
 
 
-def safe_path(path: str) -> Path:
+def safe_path(path: str | None = None) -> Path:
     base_dir = Path(FILES_BASE_DIR).resolve()
+    if path is None:
+        return base_dir  # "no path specified" = the base directory itself
     candidate = (base_dir / path).resolve()
     if base_dir not in [candidate, *candidate.parents]:
-        raise ValueError(f"Path '{path}' escapes the allowed base directory")
+        raise ValueError(...)
     return candidate
 
 

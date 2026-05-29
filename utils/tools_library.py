@@ -108,22 +108,18 @@ def file_edit(path: str, new_str: str, old_str: str = None) -> str:
         result = str(e)
     return result
 
-
 def file_delete(path: str, recursive: bool = False) -> str:
-    result = ""
     abs_path = safe_path(path)
     if not abs_path.exists():
-        result = f"Error: {path} does not exist"
+        return f"Error: {path} does not exist"
     if abs_path.is_dir():
         if recursive:
             shutil.rmtree(abs_path)
-            result = f"Deleted directory {path} and all contents"
+            return f"Deleted directory {path} and all contents"
         abs_path.rmdir()
-        result = f"Deleted empty directory {path}"
+        return f"Deleted empty directory {path}"
     abs_path.unlink()
-    result = f"Deleted file {path}"
-    print(f"[Tool: File Delete] {result}")
-    return result
+    return f"Deleted file {path}"
 
 def read_lines(path: str, start_line: int, end_line: int) -> str:
     result = ""
