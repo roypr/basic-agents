@@ -263,7 +263,7 @@ def run_command(command: str) -> str:
     
     print(f"[Tool: Run Command] {command} \n {result}")
     return result
-    
+
 def grep_search(
     pattern: str,
     path: str | None = None,
