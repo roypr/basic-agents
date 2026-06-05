@@ -1,5 +1,6 @@
 import subprocess
 import ast
+import re
 from pathlib import Path
 import shutil
 from utils.file_utils import load_tool_definition, safe_path, _file_write, _file_edit, _replace_lines
@@ -13,15 +14,53 @@ EXTENSION_MAP = {
     ".js":   "javascript",
     ".mjs":  "javascript",
     ".cjs":  "javascript",
+    ".jsx":  "javascript",
     ".ts":   "typescript",
     ".tsx":  "typescript",
-    ".jsx":  "javascript",
+    ".json": "json",
 }
 
 def detect_language(path: str) -> str | None:
     """Detect language from file extension. Returns None if unrecognized."""
     ext = Path(path).suffix.lower()
     return EXTENSION_MAP.get(ext)
+
+
+def _format_error(tool: str, output: str) -> str:
+    """
+    Normalize error output to a consistent format with line numbers prominently displayed.
+    Handles ruff/eslint (file:line:col:), node (file:line:), PHP (on line N),
+    and json.tool (line N column M) styles.
+    Returns e.g. "Ruff error at line 5, col 8: E999 SyntaxError: invalid syntax"
+    """
+    text = output.strip()
+    if not text:
+        return f"{tool}: unknown error"
+
+    # 1. file:line:col: message or file:line: message (ruff, eslint, node)
+    m = re.search(r'\.\w+:(\d+)(?::(\d+))?:\s*(.*)', text)
+    if m:
+        line = m.group(1)
+        col = f", col {m.group(2)}" if m.group(2) else ""
+        msg = m.group(3).strip() or text
+        return f"{tool} error at line {line}{col}: {msg}"
+
+    # 2. "line N column M" (json.tool)
+    m = re.search(r'line\s+(\d+)\s+column\s+(\d+)', text, re.IGNORECASE)
+    if m:
+        return f"{tool} error at line {m.group(1)}, col {m.group(2)}: {text}"
+
+    # 3. "on line N" (PHP)
+    m = re.search(r'on\s+line\s+(\d+)', text, re.IGNORECASE)
+    if m:
+        return f"{tool} error at line {m.group(1)}: {text}"
+
+    # 4. "line N" as a last resort
+    m = re.search(r'line\s+(\d+)', text, re.IGNORECASE)
+    if m:
+        return f"{tool} error at line {m.group(1)}: {text}"
+
+    return f"{tool}: {text}"
 
 def check_syntax(abs_path: str, language: str) -> str | None:
     """
@@ -30,53 +69,112 @@ def check_syntax(abs_path: str, language: str) -> str | None:
     """
 
     if language == "python":
-        # Use ast.parse first (no subprocess, instant)
-        try:
-            source = Path(abs_path).read_text(encoding="utf-8", errors="replace")
-            ast.parse(source, filename=abs_path)
+        if shutil.which("ruff"):
+            # Auto-fix what we can first
+            subprocess.run(
+                ["ruff", "check", "--fix", abs_path],
+                capture_output=True, text=True, timeout=15,
+            )
+            subprocess.run(
+                ["ruff", "format", abs_path],
+                capture_output=True, text=True, timeout=15,
+            )
+
+            # Now check for remaining issues
+            result = subprocess.run(
+                ["ruff", "check", abs_path],
+                capture_output=True, text=True, timeout=15,
+            )
+            if result.returncode != 0:
+                return _format_error("Ruff", result.stdout.strip() or result.stderr.strip())
+
+            result = subprocess.run(
+                ["ruff", "format", "--check", abs_path],
+                capture_output=True, text=True, timeout=15,
+            )
+            if result.returncode != 0:
+                return _format_error("Ruff format", result.stdout.strip() or result.stderr.strip())
+
             return None
-        except SyntaxError as e:
-            return f"SyntaxError: {e.msg} (line {e.lineno})"
+        else:
+            # ast.parse fallback (no subprocess, instant)
+            try:
+                source = Path(abs_path).read_text(encoding="utf-8", errors="replace")
+                ast.parse(source, filename=abs_path)
+                return None
+            except SyntaxError as e:
+                return f"SyntaxError: {e.msg} (line {e.lineno})"
 
     elif language == "php":
         if not shutil.which("php"):
-            return None  # php not installed, skip silently
+            return None
         result = subprocess.run(
             ["php", "-l", abs_path],
-            capture_output=True,
-            text=True,
-            timeout=10,
+            capture_output=True, text=True, timeout=10,
         )
         if result.returncode != 0:
             err = (result.stdout + result.stderr).strip()
-            return f"PHP syntax error: {err}"
+            return _format_error("PHP", err)
         return None
 
-    elif language in ("javascript", "typescript"):
+    elif language == "json":
+        if not shutil.which("python"):
+            return None
+        result = subprocess.run(
+            ["python", "-m", "json.tool", abs_path],
+            capture_output=True, text=True, timeout=10,
+        )
+        if result.returncode != 0:
+            return _format_error("JSON", result.stderr.strip() or result.stdout.strip())
+        return None
+
+    elif language == "javascript":
         # Try eslint first, fall back to node --check
         if shutil.which("eslint"):
             result = subprocess.run(
                 ["eslint", "--no-eslintrc", "--rule", '{"no-undef":0}', abs_path],
-                capture_output=True,
-                text=True,
-                timeout=15,
+                capture_output=True, text=True, timeout=15,
             )
             if result.returncode != 0:
-                return f"ESLint: {result.stdout.strip() or result.stderr.strip()}"
+                return _format_error("ESLint", result.stdout.strip() or result.stderr.strip())
             return None
 
         elif shutil.which("node"):
             result = subprocess.run(
                 ["node", "--check", abs_path],
-                capture_output=True,
-                text=True,
-                timeout=10,
+                capture_output=True, text=True, timeout=10,
             )
             if result.returncode != 0:
-                return f"JS syntax error: {result.stderr.strip()}"
+                return _format_error("Node", result.stderr.strip())
             return None
 
-        return None  # Neither available, skip silently
+        return None
+
+    elif language == "typescript":
+        # Try eslint first, fall back to tsc, then skip
+        if shutil.which("eslint"):
+            result = subprocess.run(
+                ["eslint", "--no-eslintrc", "--rule", '{"no-undef":0}', abs_path],
+                capture_output=True, text=True, timeout=15,
+            )
+            if result.returncode != 0:
+                return _format_error("ESLint", result.stdout.strip() or result.stderr.strip())
+            return None
+
+        elif shutil.which("npx"):
+            result = subprocess.run(
+                ["npx", "--yes", "-p", "typescript", "tsc", "--noEmit",
+                 "--lib", "ES2020", "--target", "ES2020",
+                 "--moduleResolution", "node",
+                 "--skipLibCheck", "--strict", "false",
+                 abs_path],
+                capture_output=True, text=True, timeout=30,
+            )
+            if result.returncode != 0:
+                return _format_error("TypeScript", result.stderr.strip() or result.stdout.strip())
+            return None
+
+        return None
 
     return None  # Unsupported language
 
