@@ -8,9 +8,17 @@ from datetime import datetime, timezone
 from pathlib import Path
 import shutil
 from .html_utils import extract_text_from_html
-from .file_utils import (safe_path, FILES_BASE_DIR, ensure_base_dir_exists, 
-                         _file_read, _file_write, _file_edit,
-                         _read_lines, _replace_lines)
+from .file_utils import (
+    safe_path,
+    FILES_BASE_DIR,
+    ensure_base_dir_exists,
+    _file_read,
+    _file_write,
+    _file_edit,
+    _read_lines,
+    _replace_lines,
+)
+
 
 def get_current_date() -> str:
     now = datetime.now(timezone.utc)
@@ -18,10 +26,11 @@ def get_current_date() -> str:
     print(f"[Tool: Date] {result}")
     return result
 
+
 def web_search(query: str, page: int = 1, results_per_page: int = 10) -> str:
     with DDGS() as ddgs:
         all_results = list(ddgs.text(query, max_results=page * results_per_page))
-    page_results = all_results[(page - 1) * results_per_page: page * results_per_page]
+    page_results = all_results[(page - 1) * results_per_page : page * results_per_page]
     results = [
         {"title": r["title"], "snippet": r["body"], "href": r["href"]}
         for r in page_results
@@ -44,14 +53,16 @@ def request_get(url: str) -> str:
         text = extract_text_from_html(resp.text)
     else:
         text = resp.text
-    
+
     print(f"[Tool: Web Page] Url: {url}")
     return text[:4000]
 
+
 def finish(message: str = "") -> str:
     print(f"[Finish] {message}")
-    
+
     return message or "Done."
+
 
 def get_all_files(base_dir: str = ".") -> str:
     abs_path = safe_path(base_dir)
@@ -64,7 +75,7 @@ def get_all_files(base_dir: str = ".") -> str:
         rel_parts = rel.parts
         if set(rel_parts) & excluded_dirs:
             continue
-        if any(part.startswith('.') for part in rel_parts):
+        if any(part.startswith(".") for part in rel_parts):
             continue
         all_files.append(rel.as_posix())
 
@@ -82,6 +93,7 @@ def file_read(path: str) -> str:
         print(f"[Tool: File read] Error: {e}")
         result = str(e)
     return result
+
 
 def file_write(path: str, content: str) -> str:
     result = ""
@@ -108,6 +120,7 @@ def file_edit(path: str, new_str: str, old_str: str = None) -> str:
         result = str(e)
     return result
 
+
 def file_delete(path: str, recursive: bool = False) -> str:
     abs_path = safe_path(path)
     if not abs_path.exists():
@@ -121,6 +134,7 @@ def file_delete(path: str, recursive: bool = False) -> str:
     abs_path.unlink()
     return f"Deleted file {path}"
 
+
 def read_lines(path: str, start_line: int, end_line: int) -> str:
     result = ""
 
@@ -133,7 +147,9 @@ def read_lines(path: str, start_line: int, end_line: int) -> str:
     return result
 
 
-def replace_lines(path: str, start_line: int, new_content: str, end_line: int = None) -> str:
+def replace_lines(
+    path: str, start_line: int, new_content: str, end_line: int = None
+) -> str:
     result = ""
 
     try:
@@ -144,11 +160,8 @@ def replace_lines(path: str, start_line: int, new_content: str, end_line: int = 
         result = str(e)
     return result
 
-def glob_search(
-    pattern: str,
-    path: str | None = None,
-    limit: int = 100
-):
+
+def glob_search(pattern: str, path: str | None = None, limit: int = 100):
     """
     Fast glob-based file search.
     """
@@ -165,7 +178,7 @@ def glob_search(
         ".venv",
         "venv",
         "dist",
-        "build"
+        "build",
     }
 
     for full_path in base.rglob("*"):
@@ -177,30 +190,20 @@ def glob_search(
 
         if set(rel_parts) & skip_dirs:
             continue
-        if any(part.startswith('.') for part in rel_parts):
+        if any(part.startswith(".") for part in rel_parts):
             continue
 
         if fnmatch.fnmatch(rel_path.as_posix(), pattern):
             mtime = full_path.stat().st_mtime
-            matches.append(
-                {
-                    "path": rel_path.as_posix(),
-                    "mtime": mtime
-                }
-            )
+            matches.append({"path": rel_path.as_posix(), "mtime": mtime})
 
-    matches.sort(
-        key=lambda x: x["mtime"],
-        reverse=True
-    )
+    matches.sort(key=lambda x: x["mtime"], reverse=True)
 
-    results = [
-        m["path"]
-        for m in matches[:limit]
-    ]
+    results = [m["path"] for m in matches[:limit]]
 
     print(f"[Tool: Glob] {len(results)} matches")
     return results
+
 
 def find_bash():
     if os.name != "nt":
@@ -219,7 +222,14 @@ def find_bash():
     return None
 
 
-def run_command(command: str) -> str:
+def run_command(command: str, timeout: int = 30) -> str:
+    MAX_COMMAND_TIMEOUT = 300
+
+    if not isinstance(timeout, int) or timeout < 1:
+        return "Error: timeout must be a positive integer (1 or more)."
+    if timeout > MAX_COMMAND_TIMEOUT:
+        return f"Error: timeout of {timeout}s exceeds maximum allowed ({MAX_COMMAND_TIMEOUT}s). Use a shorter timeout."
+
     blocked = ["rm -rf", "mkfs", "dd if=", ":(){:|:&};:"]
     for b in blocked:
         if b in command:
@@ -246,7 +256,7 @@ def run_command(command: str) -> str:
             text=True,
             encoding="utf-8",
             errors="replace",
-            timeout=30,
+            timeout=timeout,
         )
         output = []
         if result.stdout:
@@ -257,12 +267,13 @@ def run_command(command: str) -> str:
             output.append(f"exit code: {result.returncode}")
         result = "\n".join(output) if output else "(command produced no output)"
     except subprocess.TimeoutExpired:
-        result = "Error: command timed out after 30 seconds."
+        result = f"Error: command timed out after {timeout} seconds."
     except Exception as e:
         result = f"Error running command: {e}"
-    
+
     print(f"[Tool: Run Command] {command} \n {result}")
     return result
+
 
 def grep_search(
     pattern: str,
@@ -274,13 +285,13 @@ def grep_search(
     multiline: bool = False,
     context: int = 0,
     line_numbers: bool = True,
-    head_limit: int = 100
+    head_limit: int = 100,
 ):
     """
     ripgrep-powered content search.
     """
 
-    ensure_base_dir_exists()                     # ← match run_command
+    ensure_base_dir_exists()  # ← match run_command
     base = safe_path(path)
 
     cmd = ["rg"]
@@ -320,12 +331,12 @@ def grep_search(
             text=True,
             encoding="utf-8",
             errors="replace",
-            cwd=FILES_BASE_DIR,                  # ← match run_command
-            timeout=30,                          # ← match run_command
+            cwd=FILES_BASE_DIR,  # ← match run_command
+            timeout=30,  # ← match run_command
         )
 
         # rg exit codes: 0 = matches found, 1 = no matches, 2 = error
-        if result.returncode == 2:               # ← distinguish real errors
+        if result.returncode == 2:  # ← distinguish real errors
             err = result.stderr.strip()
             return f"Error: {err}" if err else "Error: rg exited with code 2"
 
@@ -337,12 +348,12 @@ def grep_search(
         lines = output.splitlines()
         result = lines[:head_limit]
 
-    except subprocess.TimeoutExpired:            # ← match run_command
+    except subprocess.TimeoutExpired:  # ← match run_command
         result = "Error: grep search timed out after 30 seconds."
     except FileNotFoundError:
         result = "Error: ripgrep (rg) is not installed."  # ← return, don't raise
     except Exception as e:
-        result = f"Error running grep search: {e}"        # ← match run_command
+        result = f"Error running grep search: {e}"  # ← match run_command
 
     print(f"[Tool: Grep] {result}")
     return result

@@ -334,17 +334,22 @@
             }
         }
     },
-    "run_command" : {
+    "run_command": {
         "type": "function",
         "function": {
             "name": "run_command",
-            "description": "Run a shell command from the base directory and return stdout/stderr.",
+            "description": "Run a shell command from the base directory and return stdout/stderr. You can optionally set a timeout (in seconds, max 300).",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "command": {
                         "type": "string",
                         "description": "Shell command to execute"
+                    },
+                    "timeout": {
+                        "type": "integer",
+                        "description": "Maximum execution time in seconds (1-300, default 30)",
+                        "default": 30
                     }
                 },
                 "required": [

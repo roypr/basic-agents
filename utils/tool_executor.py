@@ -1,6 +1,5 @@
 import json
-from concurrent.futures import ThreadPoolExecutor
-from functools import partial
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from threading import Lock
 from core.tool_registry import validate_args
 
@@ -31,7 +30,9 @@ def shutdown_tool_executor():
             _executor = None
 
 
-def execute_tool_call(tc: dict, tool_map: dict, tools: list) -> tuple[dict, str, dict, str]:
+def execute_tool_call(
+    tc: dict, tool_map: dict, tools: list
+) -> tuple[dict, str, dict, str]:
     fn_name = tc["function"]["name"]
     raw_args = tc["function"]["arguments"]
 
@@ -68,10 +69,43 @@ def execute_tool_calls(tool_calls: list, tool_map: dict, tools: list) -> list:
         _executor = ThreadPoolExecutor(max_workers=max_workers)
         executor = _executor
 
+    # Safety timeout per tool call — ensures we never hang forever,
+    # even if the underlying tool function (e.g. subprocess on Windows)
+    # fails to terminate cleanly.
+    PER_CALL_TIMEOUT = 300  # 5 minutes
+
+    # Submit all tasks first so they run concurrently
+    futures = {}
+    for tc in tool_calls:
+        f = executor.submit(execute_tool_call, tc, tool_map=tool_map, tools=tools)
+        futures[id(tc)] = f
+
+    results = []
     try:
-        return list(executor.map(partial(execute_tool_call, tool_map=tool_map, tools=tools), tool_calls))
+        for tc in tool_calls:
+            f = futures[id(tc)]
+            try:
+                result = f.result(timeout=PER_CALL_TIMEOUT)
+                results.append(result)
+            except FutureTimeoutError:
+                fn_name = tc["function"]["name"]
+                results.append(
+                    (
+                        tc,
+                        fn_name,
+                        {},
+                        f"Error: tool call '{fn_name}' timed out after {PER_CALL_TIMEOUT}s",
+                    )
+                )
+            except Exception as e:
+                fn_name = tc["function"]["name"]
+                results.append(
+                    (tc, fn_name, {}, f"Error: tool call '{fn_name}' failed: {e}")
+                )
     finally:
         with _executor_lock:
             if _executor is executor:
-                _executor.shutdown(wait=False)
+                executor.shutdown(wait=False)
                 _executor = None
+
+    return results
