@@ -4,7 +4,7 @@ from core.base_agent import BaseAgent
 from .tools import tools, TOOL_MAP
 
 
-class PlanAgent(BaseAgent):
+class ReviewAgent(BaseAgent):
     def __init__(self, name: str = "ReviewAgent", **kwargs):
         super().__init__(name=name, **kwargs)
 

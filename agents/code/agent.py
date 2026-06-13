@@ -2,6 +2,7 @@ from pathlib import Path
 
 from core.base_agent import BaseAgent
 from .tools import tools, TOOL_MAP
+from config import FILES_BASE_DIR
 
 
 class CodeAgent(BaseAgent):
@@ -11,10 +12,10 @@ class CodeAgent(BaseAgent):
     def get_system_prompt(self) -> str:
         prompt_file = Path(__file__).resolve().parent / "system_prompt.txt"
         if prompt_file.exists():
-            return prompt_file.read_text(encoding="utf-8").strip()
+            return prompt_file.read_text(encoding="utf-8").strip().replace("{base_dir}", FILES_BASE_DIR)
         prompt_file = prompt_file.with_suffix(".md")
         if prompt_file.exists():
-            return prompt_file.read_text(encoding="utf-8").strip()
+            return prompt_file.read_text(encoding="utf-8").strip().replace("{base_dir}", FILES_BASE_DIR)
         return "You are a code assistant focused on file operations in the local workspace. Only use tools exposed by this agent to inspect, read, and modify files. Keep answers concise and explain changes clearly."
 
     def get_tools(self) -> list:

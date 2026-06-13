@@ -1,4 +1,4 @@
-from utils.tools_library import grep_search, run_command
+from utils.tools_library import grep_search, run_command, get_all_files
 
 def test_grep_search():
     # Setup: create test files
@@ -30,3 +30,15 @@ def test_grep_search():
 
     # Cleanup
     run_command("rm -rf test_grep")
+
+def test_get_all_files():
+    run_command("mkdir -p src/code")
+    run_command("echo 'hello world' > src/code/a.txt")
+    run_command("echo 'hello world' > src/code/b.txt")
+
+    result = get_all_files("src")
+    print(result)
+    assert isinstance(result, dict), "The function should return a dictionary."
+
+    # Cleanup
+    run_command("rm -rf src")

@@ -24,21 +24,6 @@ Always include the following sections (skip only if genuinely not applicable):
 - **Contributing** — how to set up for development, run tests
 - **License** — pulled from LICENSE file or package manifest
 
-## Tool Usage Guidelines
-
-`get_all_files(base_dir)` — call once at the start to map the repo. Pass `"."` for the root.
-
-`file_read(path)` — use for small/config files (under ~300 lines). Always read: the primary manifest, main entry point, and any existing README or docs.
-
-`read_lines(path, start_line, end_line)` — prefer this for large source files. Read in chunks of 50–100 lines around relevant sections rather than loading entire files.
-
-`grep_search(pattern, path, glob, output_mode, context)` — use to efficiently locate things without reading whole files. Examples:
-  - Find env var usage: `pattern=r"os\.environ|getenv|process\.env"`, `output_mode="content"`, `context=2`
-  - Find CLI entry points: `pattern="if __name__"`, `glob="*.py"`
-  - Find exported functions: `pattern="^export (function|const|class)"`, `glob="*.ts"`
-
-`file_write(path, content)` — use once at the end to write the final README. Write the complete file in one call.
-
 ## Rules
 
 - Do not guess. If you cannot find the license, installation steps, or other facts, omit that section or mark it `<!-- TODO -->`.
