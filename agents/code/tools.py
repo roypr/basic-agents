@@ -124,30 +124,33 @@ def check_syntax(abs_path: str, language: str) -> str | None:
 
     if language == "python":
         if shutil.which("ruff"):
+            project_dir = find_project_dir(abs_path, PYTHON_MARKERS)
+
             # Auto-fix what we can first
             subprocess.run(
-                ["ruff", "check", "--fix", abs_path],
-                capture_output=True, text=True, timeout=15,
+                f"ruff check --fix {abs_path}",
+                capture_output=True, shell=True, cwd=project_dir, text=True, timeout=15,
             )
             subprocess.run(
-                ["ruff", "format", abs_path],
-                capture_output=True, text=True, timeout=15,
+                f"ruff format {abs_path}",
+                capture_output=True, shell=True, cwd=project_dir, text=True, timeout=15,
             )
 
             # Now check for remaining issues
             result = subprocess.run(
-                ["ruff", "check", abs_path],
-                capture_output=True, text=True, timeout=15,
+                f"ruff check {abs_path}",
+                capture_output=True, shell=True, cwd=project_dir, text=True, timeout=15,
             )
+            
             if result.returncode != 0:
-                return _format_error("Ruff", result.stdout.strip() or result.stderr.strip())
+                return f"Ruff check error \n{result.stdout.strip() or result.stderr.strip()}"
 
             result = subprocess.run(
-                ["ruff", "format", "--check", abs_path],
-                capture_output=True, text=True, timeout=15,
+                f"ruff format --check {abs_path}",
+                capture_output=True, shell=True, cwd=project_dir, text=True, timeout=15,
             )
             if result.returncode != 0:
-                return _format_error("Ruff format", result.stdout.strip() or result.stderr.strip())
+                return f"Ruff format error \n{result.stdout.strip() or result.stderr.strip()}"
 
             return None
         else:
@@ -163,69 +166,59 @@ def check_syntax(abs_path: str, language: str) -> str | None:
         if not shutil.which("php"):
             return None
         result = subprocess.run(
-            ["php", "-l", abs_path],
-            capture_output=True, text=True, timeout=10,
+            f"php -l {abs_path}",
+            capture_output=True, shell=True, text=True, timeout=10,
         )
         if result.returncode != 0:
             err = (result.stdout + result.stderr).strip()
-            return _format_error("PHP", err)
+            return f"PHP error \n{err}"
         return None
 
     elif language == "json":
         if not shutil.which("python"):
             return None
         result = subprocess.run(
-            ["python", "-m", "json.tool", abs_path],
-            capture_output=True, text=True, timeout=10,
+            f"python -m json.tool {abs_path}",
+            capture_output=True, shell=True, text=True, timeout=10,
         )
         if result.returncode != 0:
-            return _format_error("JSON", result.stderr.strip() or result.stdout.strip())
+            return f"JSON error \n{result.stdout.strip() or result.stderr.strip()}"
         return None
 
     elif language == "javascript":
         # Try eslint first, fall back to node --check
-        if shutil.which("eslint"):
+        if shutil.which("npx"):
+            project_dir = find_project_dir(abs_path, JS_MARKERS)
+
             result = subprocess.run(
-                ["eslint", "--no-eslintrc", "--rule", '{"no-undef":0}', abs_path],
-                capture_output=True, text=True, timeout=15,
+                f"npx eslint --quiet {abs_path}",
+                capture_output=True, shell=True, cwd=project_dir, text=True, timeout=15,
             )
             if result.returncode != 0:
-                return _format_error("ESLint", result.stdout.strip() or result.stderr.strip())
+                return f"ESLint \n{result.stdout.strip() or result.stderr.strip()}"
             return None
 
         elif shutil.which("node"):
             result = subprocess.run(
-                ["node", "--check", abs_path],
-                capture_output=True, text=True, timeout=10,
+                f"node --check {abs_path}",
+                capture_output=True, shell=True, text=True, timeout=10,
             )
             if result.returncode != 0:
-                return _format_error("Node", result.stderr.strip())
+                return f"Node \n{result.stderr.strip()}"
             return None
 
         return None
 
     elif language == "typescript":
-        # Try eslint first, fall back to tsc, then skip
-        if shutil.which("eslint"):
-            result = subprocess.run(
-                ["eslint", "--no-eslintrc", "--rule", '{"no-undef":0}', abs_path],
-                capture_output=True, text=True, timeout=15,
-            )
-            if result.returncode != 0:
-                return _format_error("ESLint", result.stdout.strip() or result.stderr.strip())
-            return None
+        if shutil.which("npx"):
+            project_dir = find_project_dir(abs_path, TS_MARKERS)
 
-        elif shutil.which("npx"):
             result = subprocess.run(
-                ["npx", "--yes", "-p", "typescript", "tsc", "--noEmit",
-                 "--lib", "ES2020", "--target", "ES2020",
-                 "--moduleResolution", "node",
-                 "--skipLibCheck", "--strict", "false",
-                 abs_path],
-                capture_output=True, text=True, timeout=30,
+                f"npx tsc --noEmit {abs_path}",
+                capture_output=True, shell=True, cwd=project_dir, text=True, timeout=30,
             )
             if result.returncode != 0:
-                return _format_error("TypeScript", result.stderr.strip() or result.stdout.strip())
+                return f"TypeScript \n{result.stderr.strip() or result.stdout.strip()}"
             return None
 
         return None
