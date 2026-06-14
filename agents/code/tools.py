@@ -20,6 +20,60 @@ EXTENSION_MAP = {
     ".json": "json",
 }
 
+TS_MARKERS = (
+    "tsconfig.json",
+)
+
+ESLINT_MARKERS = (
+    "eslint.config.js",
+    "eslint.config.mjs",
+    "eslint.config.cjs",
+    ".eslintrc.js",
+    ".eslintrc.cjs",
+    ".eslintrc.json",
+    ".eslintrc.yml",
+    "package.json",
+)
+
+PYTHON_MARKERS = (
+    "pyproject.toml",
+    "setup.py",
+    "requirements.txt",
+)
+
+JS_MARKERS = (
+    *ESLINT_MARKERS,
+    "package.json",
+)
+
+def find_project_dir(
+    abs_path: str,
+    markers: list[str] | tuple[str, ...],
+) -> Path:
+    """
+    Find the nearest ancestor directory containing any of the given markers.
+
+    Args:
+        rel_path: Path relative to FILES_BASE_DIR.
+        markers: Filenames indicating a project root.
+
+    Returns:
+        Path to the nearest matching directory, or FILES_BASE_DIR if none found.
+    """
+    base_dir = safe_path()
+    path = Path(abs_path).resolve()
+
+    current = path.parent if path.is_file() else path
+
+    while True:
+        if any((current / marker).exists() for marker in markers):
+            return current
+
+        if current == base_dir:
+            return base_dir
+
+        current = current.parent
+
 def detect_language(path: str) -> str | None:
     """Detect language from file extension. Returns None if unrecognized."""
     ext = Path(path).suffix.lower()
