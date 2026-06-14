@@ -214,7 +214,7 @@ def check_syntax(abs_path: str, language: str) -> str | None:
             project_dir = find_project_dir(abs_path, TS_MARKERS)
 
             result = subprocess.run(
-                f"npx tsc --noEmit {abs_path}",
+                f"npx tsc --noEmit",
                 capture_output=True, shell=True, cwd=project_dir, text=True, timeout=30,
             )
             if result.returncode != 0:
