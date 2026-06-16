@@ -2,3 +2,4 @@ requests
 ddgs
 beautifulsoup4
 html2text
+ruff
