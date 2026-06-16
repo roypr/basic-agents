@@ -118,7 +118,6 @@ class BaseAgent:
                 return
 
             for tc, fn_name, fn_args, result in tool_results:
-                print(result)
                 tool_call_id = tc.get("id")
                 messages.append({
                     "role": "tool",
