@@ -147,19 +147,16 @@ def _replace_lines(path: str, start_line: int, new_content: str, end_line: int =
         lines = f.readlines()
     total_lines = len(lines)
 
-    # Ensure new_content always ends with a newline so the next line isn't merged
     if new_content and not new_content.endswith('\n'):
         new_content += '\n'
     new_lines = new_content.splitlines(keepends=True)
 
     if end_line is None:
-        # Insert AFTER start_line (pass 0 to prepend before line 1)
-        if start_line < 0 or start_line > total_lines:
-            raise ValueError(f"start_line {start_line} out of range (0–{total_lines})")
-        result = lines[:start_line] + new_lines + lines[start_line:]
-        action = f"Inserted after line {start_line} in"
+        if start_line < 1 or start_line > total_lines:
+            raise ValueError(f"start_line {start_line} out of range (1–{total_lines})")
+        result = lines[:start_line - 1] + new_lines + lines[start_line:]  # ← fixed
+        action = f"Replaced line {start_line} in"
     else:
-        # Clamp end_line rather than hard-rejecting valid edge cases
         end_line = min(end_line, total_lines)
         if start_line < 1 or end_line < 1 or start_line > end_line:
             raise ValueError(f"Invalid line range {start_line}-{end_line}")
@@ -172,5 +169,3 @@ def _replace_lines(path: str, start_line: int, new_content: str, end_line: int =
     new_line_count = len(new_lines)
     total_after = len(result)
     return f"{action} {path} ({new_line_count} lines written, file now {total_after} lines)"
-
-    
