@@ -125,11 +125,13 @@ def _read_lines(path: str, start_line: int, end_line: int) -> str:
     abs_path = safe_path(path)
     if not Path(abs_path).exists():
         raise FileNotFoundError(f"File not found: {abs_path}")
+
     with open(abs_path, 'r', encoding='utf-8') as f:
         lines = f.readlines()
+
     total_lines = len(lines)
 
-    if(end_line > total_lines):
+    if end_line > total_lines:
         end_line = total_lines
 
     if start_line < 1 or end_line < 1:
@@ -137,9 +139,18 @@ def _read_lines(path: str, start_line: int, end_line: int) -> str:
     if start_line > end_line:
         raise ValueError("Start line must be less than or equal to end line.")
     if start_line > total_lines:
-        raise ValueError(f"Requested line range exceeds file length ({total_lines} lines).")
-    return ''.join(lines[start_line - 1:end_line])
+        raise ValueError(
+            f"Requested line range exceeds file length ({total_lines} lines)."
+        )
 
+    result = []
+    for i in range(start_line - 1, end_line):
+        result.append({
+            "line": i + 1,
+            "content": lines[i]
+        })
+
+    return json.dumps(result, ensure_ascii=False)
 
 def _replace_lines(path: str, start_line: int, new_content: str, end_line: int = None) -> str:
     abs_path = safe_path(path)

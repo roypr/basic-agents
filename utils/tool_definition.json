@@ -78,7 +78,7 @@
         "type": "function",
         "function": {
             "name": "read_lines",
-            "description": "Read a range of lines from a file.",
+            "description": "Read a range of lines from a file. Result will be in JSON format. Each item with keys line, content. line is 1-based line number, content is content of that line. Use the line numbers when calling replace_lines",
             "parameters": {
                 "type": "object",
                 "properties": {
