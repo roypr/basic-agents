@@ -8,8 +8,7 @@ from config import FILES_BASE_DIR
 _ESCAPE_MAP = {
     'n': '\n',
     't': '\t',
-    'r': '\r',
-    '\\': '\\',
+    'r': '\r'
 }
 
 def _unescape_content(s: str) -> str:
