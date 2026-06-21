@@ -103,6 +103,34 @@
             }
         }
     },
+    "remove_lines": {
+        "type": "function",
+        "function": {
+            "name": "remove_lines",
+            "description": "Remove one or a range of lines from a file.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Relative file path"
+                    },
+                    "start_line": {
+                        "type": "integer",
+                        "description": "Starting line number"
+                    },
+                    "end_line": {
+                        "type": "integer",
+                        "description": "Ending line number. None to remove only start_line."
+                    }
+                },
+                "required": [
+                    "path",
+                    "start_line"
+                ]
+            }
+        }
+    },
     "replace_lines" : {
         "type": "function",
         "function": {
@@ -121,7 +149,7 @@
                     },
                     "end_line": {
                         "type": "integer",
-                        "description": "Ending line number"
+                        "description": "Ending line number. None to replace only start_line"
                     },
                     "new_content": {
                         "type": "string",

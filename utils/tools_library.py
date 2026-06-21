@@ -9,6 +9,7 @@ from pathlib import Path
 import shutil
 from .html_utils import extract_text_from_html
 from .file_utils import (
+    _remove_lines,
     safe_path,
     FILES_BASE_DIR,
     ensure_base_dir_exists,
@@ -154,9 +155,26 @@ def replace_lines(
 
     try:
         result = _replace_lines(path, start_line, new_content, end_line)
+        result += f"\nLine numbers from {start_line} to the end have changed. Check updated content of {path} below\n"
+        result += _file_read(path)
         print(f"[Tool: Replace lines] path: {path} start: {start_line} end: {end_line}")
     except Exception as e:
         print(f"[Tool: Replace lines] Error: {e}")
+        result = str(e)
+    return result
+
+def remove_lines(
+    path: str, start_line: int, end_line: int = None
+) -> str:
+    result = ""
+
+    try:
+        result = _remove_lines(path, start_line, end_line)
+        result += f"\nLine numbers from {start_line} to the end have changed. Check updated content of {path} below\n"
+        result += _file_read(path)
+        print(f"[Tool: Remove lines] path: {path} start: {start_line} end: {end_line}")
+    except Exception as e:
+        print(f"[Tool: Remove lines] Error: {e}")
         result = str(e)
     return result
 

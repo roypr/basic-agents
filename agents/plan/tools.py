@@ -1,6 +1,6 @@
 from utils.tools_library import (glob_search, grep_search, 
                                  file_write, file_read, file_edit, get_all_files, 
-                                 read_lines, replace_lines, 
+                                 read_lines, remove_lines, replace_lines, 
                                  web_search, request_get, finish)
 from utils.file_utils import load_tool_definition
 
@@ -13,6 +13,7 @@ tools = [
     all_tools["request_get"],
     all_tools["get_all_files"],
     all_tools["read_lines"],
+    all_tools["remove_lines"],
     all_tools["replace_lines"],
     all_tools["file_read"],
     all_tools["file_write"],
@@ -30,6 +31,7 @@ TOOL_MAP = {
     "file_write": file_write,
     "file_edit": file_edit,
     "read_lines": read_lines,
+    "remove_lines" : remove_lines,
     "replace_lines": replace_lines,
     "finish": finish,
 }

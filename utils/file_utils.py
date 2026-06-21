@@ -204,3 +204,28 @@ def _replace_lines(path: str, start_line: int, new_content: str, end_line: int =
     new_line_count = len(new_lines)
     total_after = len(result)
     return f"{action} {path} ({new_line_count} lines written, file now {total_after} lines)"
+
+def _remove_lines(path: str, start_line: int, end_line: int = None) -> str:
+    abs_path = safe_path(path)
+
+    with open(abs_path, 'r', encoding='utf-8') as f:
+        lines = f.readlines()
+    total_lines = len(lines)
+
+    if end_line is None:
+        if start_line < 1 or start_line > total_lines:
+            raise ValueError(f"start_line {start_line} out of range (1–{total_lines})")
+        result = lines[:start_line - 1] + lines[start_line:]
+        action = f"Removed line {start_line} in"
+    else:
+        end_line = min(end_line, total_lines)
+        if start_line < 1 or end_line < 1 or start_line > end_line:
+            raise ValueError(f"Invalid line range {start_line}-{end_line}")
+        result = lines[:start_line - 1] + lines[end_line:]
+        action = f"Removed lines {start_line}-{end_line} in"
+    
+    with open(abs_path, "w", encoding="utf-8") as f:
+        f.write(''.join(result))
+
+    total_after = len(result)
+    return f"{action} {path} (file now {total_after} lines)"

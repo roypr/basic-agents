@@ -3,7 +3,7 @@ import ast
 import re
 from pathlib import Path
 import shutil
-from utils.file_utils import load_tool_definition, safe_path, _file_write, _file_edit, _replace_lines
+from utils.file_utils import _file_read, _remove_lines, load_tool_definition, safe_path, _file_write, _file_edit, _replace_lines
 from utils.tools_library import (get_current_date, web_search, request_get, get_all_files, 
                                  read_lines, file_read, file_delete, 
                                  glob_search, grep_search, run_command, finish)
@@ -286,6 +286,32 @@ def file_edit(path: str, new_str: str, old_str: str = None) -> str:
         result = str(e)
     return result
 
+def remove_lines(
+    path: str, start_line: int, end_line: int = None
+) -> str:
+    result = ""
+
+    try:
+        result = _remove_lines(path, start_line, end_line)
+
+        syntax_error = syntax_check_file(path)
+        if syntax_error:
+            result += f"\n\n⚠️ Syntax check: {syntax_error}"
+        else:
+            lang = detect_language(path)
+            if lang:
+                result += f"\n✓ Syntax OK ({lang})"
+
+        print(f"[Tool: Remove lines] {result}")
+
+        result += f"\nLine numbers from {start_line} to the end have changed. Check updated content of {path} below\n"
+        result += _file_read(path)
+
+    except Exception as e:
+        print(f"[Tool: Remove lines] Error: {e}")
+        result = str(e)
+    return result
+
 def replace_lines(path: str, start_line: int, new_content: str, end_line: int = None) -> str:
     result = ""
 
@@ -301,6 +327,10 @@ def replace_lines(path: str, start_line: int, new_content: str, end_line: int = 
                 result += f"\n✓ Syntax OK ({lang})"
 
         print(f"[Tool: Replace lines] {result}")
+
+        result += f"\nLine numbers from {start_line} to the end have changed. Check updated content of {path} below\n"
+        result += _file_read(path)
+
     except Exception as e:
         print(f"[Tool: Replace lines] Error: {e}")
         result = str(e)
@@ -374,6 +404,34 @@ tools = [
     {
         "type": "function",
         "function": {
+            "name": "remove_lines",
+            "description": "Remove one or a range of lines from a file. For Py, JS, TS, PHP files it will run quick syntax check",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Relative file path"
+                    },
+                    "start_line": {
+                        "type": "integer",
+                        "description": "Starting line number"
+                    },
+                    "end_line": {
+                        "type": "integer",
+                        "description": "Ending line number. None to replace only start_line"
+                    }
+                },
+                "required": [
+                    "path",
+                    "start_line"
+                ]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "replace_lines",
             "description": "Insert at perticular line of a file or replace a range of lines in a file. For Py, JS, TS, PHP files it will run quick syntax check",
             "parameters": {
@@ -389,7 +447,7 @@ tools = [
                     },
                     "end_line": {
                         "type": "integer",
-                        "description": "Ending line number"
+                        "description": "Ending line number. None to replace only start_line"
                     },
                     "new_content": {
                         "type": "string",
@@ -418,6 +476,7 @@ TOOL_MAP = {
     "file_edit": file_edit,
     "file_delete": file_delete,
     "read_lines": read_lines,
+    "remove_lines" : remove_lines,
     "replace_lines": replace_lines,
     "run_command": run_command,
     "finish": finish,
