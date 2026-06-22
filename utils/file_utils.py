@@ -5,16 +5,6 @@ import unicodedata
 from pathlib import Path
 from config import FILES_BASE_DIR
 
-_ESCAPE_MAP = {
-    'n': '\n',
-    't': '\t',
-    'r': '\r'
-}
-
-def _unescape_content(s: str) -> str:
-    """Convert literal \\t, \\n, \\r, \\\\ from AI output into real characters."""
-    return re.sub(r'\\([ntr\\])', lambda m: _ESCAPE_MAP[m.group(1)], s)
-
 def safe_path(path: str | None = None) -> Path:
     base_dir = Path(FILES_BASE_DIR).resolve()
     if path is None:
@@ -122,15 +112,11 @@ def _file_write(path: str, content: str):
     abs_path = safe_path(path)
     abs_path.parent.mkdir(parents=True, exist_ok=True)
 
-    content = _unescape_content(content)
-
     with open(abs_path, "w", encoding="utf-8") as f:
         f.write(content)
 
 def _file_edit(path: str, new_str: str, old_str: str = None):
     abs_path = safe_path(path)
-
-    new_str = _unescape_content(new_str)
 
     with open(abs_path, "r", encoding="utf-8") as f:
         original = f.read()
@@ -175,8 +161,6 @@ def _read_lines(path: str, start_line: int, end_line: int) -> str:
 
 def _replace_lines(path: str, start_line: int, new_content: str, end_line: int = None) -> str:
     abs_path = safe_path(path)
-
-    new_content = _unescape_content(new_content)
 
     with open(abs_path, 'r', encoding='utf-8') as f:
         lines = f.readlines()
