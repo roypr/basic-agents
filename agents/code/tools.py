@@ -304,8 +304,7 @@ def remove_lines(
 
         print(f"[Tool: Remove lines] {result}")
 
-        result += f"\nLine numbers from {start_line} to the end have changed. Check updated content of {path} below\n"
-        result += _file_read(path)
+        result += f"\nLine numbers from {start_line} to the end have changed."
 
     except Exception as e:
         print(f"[Tool: Remove lines] Error: {e}")
@@ -328,8 +327,7 @@ def replace_lines(path: str, start_line: int, new_content: str, end_line: int = 
 
         print(f"[Tool: Replace lines] {result}")
 
-        result += f"\nLine numbers from {start_line} to the end have changed. Check updated content of {path} below\n"
-        result += _file_read(path)
+        result += f"\nLine numbers from {start_line} to the end have changed"
 
     except Exception as e:
         print(f"[Tool: Replace lines] Error: {e}")
