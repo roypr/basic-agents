@@ -26,6 +26,8 @@ basic-agents/
 ├── main.py              # CLI entry point
 ├── session_utils.py     # Session management CLI
 ├── config.py            # Global config (FILES_BASE_DIR)
+├── providers.json       # Provider/model config (not committed — copy providers.example.json)
+├── providers.example.json # Template for providers.json
 ├── requirements.txt     # Runtime deps: requests, ddgs
 ├── requirements-dev.txt # Dev deps: pytest, pytest-cov, pytest-mock, pytest-asyncio, python-dotenv
 └── pytest.ini           # pytest config
@@ -45,30 +47,45 @@ pip install -r requirements-dev.txt
 
 ## Running an Agent
 
+Providers and models are configured in `providers.json` (see [Providers](#providers)). The default provider and model are picked up automatically, so the simplest invocation is:
+
 ```bash
 python main.py \
   --agent default \
-  --query "What files are in my workspace?" \
-  --llm-base http://localhost:8080 \
-  --model local \
-  --max-turns 10
+  --query "What files are in my workspace?"
 ```
 
-### Using OpenRouter
-
-To run against any model available on OpenRouter, set `--llm-base`, `--model`, and `--api-key`:
+To pick a specific provider and model:
 
 ```bash
 python main.py \
   --agent default \
+  --provider deepseek \
+  --model deepseek-v4-flash \
   --query "Refactor this module" \
-  --llm-base https://openrouter.ai/api/v1 \
-  --model anthropic/claude-sonnet-4-5 \
-  --api-key sk-or-... \
   --max-turns 50
 ```
 
-This works with any provider that exposes an OpenAI-compatible `/v1/chat/completions` endpoint.
+List everything configured in `providers.json`:
+
+```bash
+python main.py --list-providers
+```
+
+### Overriding the Endpoint Directly
+
+If you want to bypass `providers.json` entirely (e.g. for a one-off local server), pass `--llm-base`, `--model`, and optionally `--api-key`:
+
+```bash
+python main.py \
+  --agent default \
+  --query "Quick question" \
+  --llm-base http://localhost:8080 \
+  --model local \
+  --api-key sk-...
+```
+
+This works with any provider that exposes an OpenAI-compatible `/chat/completions` endpoint.
 
 ### Long-running Tasks
 
@@ -91,15 +108,17 @@ Sessions persist the full conversation history, so the agent picks up with compl
 |---|---|---|
 | `--agent` | `default` | Which agent to run (must match a directory under `agents/`) |
 | `--query` | `""` | The question or task to send to the agent |
-| `--llm-base` | `http://localhost:8080` | Base URL of the LLM inference server |
-| `--model` | `local` | Model name passed to the server |
+| `--provider` | `providers.json` default | Provider name from `providers.json` |
+| `--model` | `providers.json` default | Model name for the chosen provider |
+| `--llm-base` | — | Override the LLM base URL (bypasses `providers.json`) |
+| `--api-key` | — | Override the API key (bypasses `providers.json`) |
 | `--max-turns` | `10` | Maximum tool-call rounds before stopping — set generously for long tasks |
-| `--api-key` | `""` | Bearer token for external API endpoints |
 | `--files-base-dir` | `/workspace` | Base directory exposed to file tools |
 | `--include` | — | Path to a file whose contents are appended to the query |
 | `--lines` | — | Line range from `--include`, e.g. `10-20` or `20` |
 | `--resume-session` | — | Resume an existing session by ID — useful when max turns is reached |
 | `--session-name` | `Default Session` | Name for a new session |
+| `--list-providers` | — | List configured providers and models, then exit |
 
 ### Including File Context
 
@@ -172,10 +191,48 @@ class MyagentAgent(BaseAgent):
 3. Run it:
 
 ```bash
-python main.py --agent myagent --query "Do something" --llm-base http://localhost:8080
+python main.py --agent myagent --query "Do something"
 ```
 
 The framework discovers agents by directory name, so no registration step is needed.
+
+## Providers
+
+Model endpoints are configured in `providers.json` at the project root. The file is intentionally lightweight — just providers, their API URLs/keys, and the models each exposes. No router, fallback, or transformer logic.
+
+```json
+{
+  "default_provider": "deepseek",
+  "default_model": "deepseek-v4-flash",
+  "providers": [
+    {
+      "name": "deepseek",
+      "api_base_url": "https://api.deepseek.com/chat/completions",
+      "api_key": "sk-...",
+      "models": ["deepseek-v4-pro", "deepseek-v4-flash"]
+    },
+    {
+      "name": "local",
+      "api_base_url": "http://localhost:8080/chat/completions",
+      "api_key": "sk-",
+      "models": ["claude-sonet-4.6"]
+    }
+  ]
+}
+```
+
+- **`default_provider` / `default_model`** — used when `--provider` / `--model` are omitted.
+- **`providers[].name`** — referenced by `--provider`.
+- **`providers[].models`** — list of valid model names for `--model`.
+
+A `providers.example.json` template is included. Copy it to get started:
+
+```bash
+cp providers.example.json providers.json
+# then edit providers.json with your real API keys
+```
+
+> `providers.json` contains secrets and should **not** be committed. It is already covered by `.gitignore` if you add it there.
 
 ## Configuration
 
@@ -207,4 +264,4 @@ python run_tests.py
 
 ## Compatibility
 
-Designed to work with any OpenAI-compatible `/v1/chat/completions` endpoint. Tested with local servers running via llama.cpp / ik_llama.cpp. Works with remote providers by setting `--llm-base` and `--api-key` — including **OpenRouter** (`https://openrouter.ai/api/v1`), OpenAI, Together AI, and others.
+Designed to work with any OpenAI-compatible `/chat/completions` endpoint. Tested with local servers running via llama.cpp / ik_llama.cpp. Works with remote providers configured in `providers.json` — including **OpenRouter**, **DeepSeek**, OpenAI, Together AI, and others. For one-off runs against an unconfigured endpoint, use `--llm-base` / `--model` / `--api-key` to bypass `providers.json`.

@@ -5,6 +5,7 @@ from importlib import import_module
 from pathlib import Path
 
 from utils.file_utils import build_query, parse_line_range
+from utils.provider_config import ProviderError, resolve_provider
 
 
 def get_agent_class(agent_name: str):
@@ -37,13 +38,28 @@ def main():
                         help="Optional file path to include content from")
     parser.add_argument("--lines", default=None,
                         help="Optional line range to include from --include, e.g. 10-20 or 20")
-    parser.add_argument("--llm-base", default="http://localhost:8080", help="Base URL of the LLM server")
-    parser.add_argument("--model", default="local", help="Model name")
+    parser.add_argument("--provider", default=None,
+                        help="Provider name from providers.json (default: providers.json default_provider)")
+    parser.add_argument("--model", default=None,
+                        help="Model name for the chosen provider (default: providers.json default_model)")
+    parser.add_argument("--llm-base", default=None,
+                        help="Override LLM base URL (bypasses providers.json)")
+    parser.add_argument("--api-key", default=None,
+                        help="Override API key (bypasses providers.json)")
     parser.add_argument("--max-turns", type=int, default=10, help="Max tool-call rounds")
-    parser.add_argument("--api-key", default="", help="Bearer token for external API")
     parser.add_argument("--resume-session", type=int, help="Resume an existing session by ID")
     parser.add_argument("--session-name", default="Default Session", help="Name for the session")
+    parser.add_argument("--list-providers", action="store_true",
+                        help="List configured providers and models, then exit")
     args = parser.parse_args()
+
+    if args.list_providers:
+        from utils.provider_config import list_models
+        for provider, models in list_models().items():
+            print(f"[{provider}]")
+            for m in models:
+                print(f"  - {m}")
+        return
 
     if args.files_base_dir:
         os.environ["FILES_BASE_DIR"] = args.files_base_dir
@@ -63,13 +79,28 @@ def main():
     except ValueError as exc:
         parser.error(str(exc))
 
+    # Resolve provider/model unless the caller explicitly overrode the URL.
+    if args.llm_base is not None:
+        llm_base = args.llm_base
+        api_key = args.api_key or ""
+        model = args.model or "local"
+    else:
+        try:
+            provider_cfg = resolve_provider(args.provider, args.model)
+        except ProviderError as exc:
+            parser.error(str(exc))
+        llm_base = provider_cfg.api_base_url
+        api_key = provider_cfg.api_key
+        model = provider_cfg.model
+        print(f"[Provider] {provider_cfg.name} -> {model} @ {llm_base}")
+
     agent = agent_cls(
-        model=args.model,
-        llm_base=args.llm_base,
+        model=model,
+        llm_base=llm_base,
         max_turns=args.max_turns,
         resume_session=args.resume_session,
         session_name=args.session_name,
-        api_key=args.api_key,
+        api_key=api_key,
     )
 
     try:
