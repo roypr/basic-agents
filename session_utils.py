@@ -2,6 +2,7 @@ import argparse
 import json
 from datetime import datetime
 from db.session_db import SessionDB
+from utils.history_compressor import compress_session as compress_session_fn
 
 
 def file_write(path: str, data: str) -> None:
@@ -26,7 +27,9 @@ def list_sessions(_args):
     for session in sessions:
         prompt = session["system_prompt"] or ""
         truncated = prompt[:50] + ("..." if len(prompt) > 50 else "")
-        print(f"{session['id']}\t{session['name']}\t{session['created_at']}\t{session['updated_at']}\t{truncated}")
+        print(
+            f"{session['id']}\t{session['name']}\t{session['created_at']}\t{session['updated_at']}\t{truncated}"
+        )
 
 
 def get_session(args):
@@ -58,13 +61,25 @@ def delete_session(args):
         print(f"Session {args.id} not found or already deleted.")
 
 
+def compress_session_cmd(args):
+    """Compress a session by stripping tool artifacts."""
+    db = SessionDB()
+    new_id = compress_session_fn(db, args.id, args.output_dir)
+    if new_id is None:
+        print(f"Failed to compress session {args.id}.")
+        return 1
+    return 0
+
+
 def main():
     parser = argparse.ArgumentParser(description="Manage basic-agents sessions")
     subparsers = parser.add_subparsers(dest="command")
 
     create_parser = subparsers.add_parser("create")
     create_parser.add_argument("--name", required=True, help="Name of the session")
-    create_parser.add_argument("--system-prompt", default="", help="System prompt content")
+    create_parser.add_argument(
+        "--system-prompt", default="", help="System prompt content"
+    )
 
     list_parser = subparsers.add_parser("list")
     get_parser = subparsers.add_parser("get")
@@ -72,6 +87,14 @@ def main():
 
     delete_parser = subparsers.add_parser("delete")
     delete_parser.add_argument("--id", type=int, required=True, help="Session ID")
+
+    compress_parser = subparsers.add_parser("compress")
+    compress_parser.add_argument(
+        "--id", type=int, required=True, help="Session ID to compress"
+    )
+    compress_parser.add_argument(
+        "--output-dir", default="logs", help="Directory for raw export (default: logs/)"
+    )
 
     args = parser.parse_args()
     if args.command == "create":
@@ -82,6 +105,8 @@ def main():
         get_session(args)
     elif args.command == "delete":
         delete_session(args)
+    elif args.command == "compress":
+        compress_session_cmd(args)
     else:
         parser.print_help()
 
