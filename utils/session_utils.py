@@ -105,6 +105,8 @@ def compress_session_cmd(
     if summarize:
         # Re-read the compressed session's messages (already stripped)
         compressed_messages = db.get_messages(new_id)
+        # Filter out messages with empty content before summarization
+        compressed_messages = [m for m in compressed_messages if m.get("content", "")]
         print(f"[Summarize] Summarizing {len(compressed_messages)} messages...")
         try:
             summary = summarize_history(

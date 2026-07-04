@@ -115,7 +115,7 @@ def do_run(args):
 
 def do_session(args):
     """Handle the 'session' subcommand."""
-    import session_utils
+    from utils import session_utils
 
     cmd = args.session_command
     if cmd == "create":

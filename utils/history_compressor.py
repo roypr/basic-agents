@@ -132,7 +132,7 @@ def compress_session(
     for msg in stripped:
         # 'content' is guaranteed to be present after strip_message
         content = msg.get("content", "")
-        if content or msg["role"] in ("system", "assistant"):
+        if content:
             db.add_message(
                 new_session_id,
                 role=msg["role"],
