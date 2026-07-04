@@ -111,8 +111,9 @@ def compress_session(
         return None
 
     raw_messages = db.get_messages(session_id)
-    original_system_prompt = session["system_prompt"] or ""
     session_name = session["name"]
+    # sqlite3.Row supports .keys() — check column existence gracefully
+    agent_name = session["agent_name"] if "agent_name" in session.keys() else ""
 
     # 2. Export raw messages to log
     export_path = export_raw_messages(session_id, raw_messages, output_dir)
@@ -120,10 +121,11 @@ def compress_session(
     # 3. Strip history
     stripped = strip_history(raw_messages)
 
-    # 4. Create new session
+    # 4. Create new session (system prompt comes from agent, not DB)
     new_session_id = db.create_session(
         name=f"{session_name} (compressed from {session_id})",
-        system_prompt=original_system_prompt,
+        system_prompt="",
+        agent_name=agent_name,
     )
 
     # 5. Add stripped messages to new session

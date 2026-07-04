@@ -4,6 +4,7 @@ from unittest.mock import Mock
 
 from utils import session_manager
 
+
 @pytest.mark.unit
 class TestSessionManager:
     def test_load_system_prompt_defaults_to_constant(self):
@@ -39,69 +40,56 @@ class TestSessionManager:
 
         assert result == session_manager.SYSTEM_PROMPT
 
-    def test_init_session_db_creates_new_session_when_no_resume(self, monkeypatch, capsys):
+    def test_init_session_db_creates_new_session_when_no_resume(
+        self, monkeypatch, capsys
+    ):
         mock_db = Mock()
         mock_db.create_session.return_value = 42
         monkeypatch.setattr(session_manager, "SessionDB", Mock(return_value=mock_db))
 
-        session_id, system_prompt = session_manager.init_session_db(
+        session_id = session_manager.init_session_db(
             resume_session=None,
             session_name="New session",
-            system_prompt="Hello"
+            system_prompt="Hello",
+            agent_name="test",
         )
 
         assert session_id == 42
-        assert system_prompt == "Hello"
-        mock_db.create_session.assert_called_once_with("New session", "Hello")
+        mock_db.create_session.assert_called_once_with(
+            "New session", "Hello", agent_name="test"
+        )
         assert "Created new session" in capsys.readouterr().out
 
     def test_init_session_db_resumes_existing_session(self, monkeypatch, capsys):
         mock_db = Mock()
         mock_db.get_session.return_value = {
             "name": "Existing session",
-            "system_prompt": "Saved prompt"
+            "system_prompt": "Saved prompt",
         }
         monkeypatch.setattr(session_manager, "SessionDB", Mock(return_value=mock_db))
 
-        session_id, system_prompt = session_manager.init_session_db(
+        session_id = session_manager.init_session_db(
             resume_session=7,
             session_name="Ignored",
-            system_prompt="Ignored"
+            system_prompt="Ignored",
         )
 
         assert session_id == 7
-        assert system_prompt == "Saved prompt"
         assert "Resuming session" in capsys.readouterr().out
 
-    def test_init_session_db_resumes_with_default_prompt_when_empty(self, monkeypatch):
-        mock_db = Mock()
-        mock_db.get_session.return_value = {
-            "name": "Existing session",
-            "system_prompt": ""
-        }
-        monkeypatch.setattr(session_manager, "SessionDB", Mock(return_value=mock_db))
-
-        session_id, system_prompt = session_manager.init_session_db(
-            resume_session=8,
-            session_name="Ignored",
-            system_prompt="Ignored"
-        )
-
-        assert session_id == 8
-        assert system_prompt == session_manager.SYSTEM_PROMPT
-
-    def test_init_session_db_falls_back_to_creation_when_resume_not_found(self, monkeypatch, capsys):
+    def test_init_session_db_falls_back_to_creation_when_resume_not_found(
+        self, monkeypatch, capsys
+    ):
         mock_db = Mock()
         mock_db.get_session.return_value = None
         mock_db.create_session.return_value = 99
         monkeypatch.setattr(session_manager, "SessionDB", Mock(return_value=mock_db))
 
-        session_id, system_prompt = session_manager.init_session_db(
+        session_id = session_manager.init_session_db(
             resume_session=10,
             session_name="Fallback session",
-            system_prompt="Fallback prompt"
+            system_prompt="Fallback prompt",
         )
 
         assert session_id == 99
-        assert system_prompt == "Fallback prompt"
         assert "creating a new session" in capsys.readouterr().out
