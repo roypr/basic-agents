@@ -12,7 +12,7 @@ logging.basicConfig(
     filename="logs/app_errors.log",
     filemode="a",  # 'a' appends data, 'w' overwrites the file each run
     format="%(asctime)s - %(levelname)s - %(message)s",
-    level=logging.DEBUG
+    level=logging.ERROR
 )
 
 class BaseAgent:
