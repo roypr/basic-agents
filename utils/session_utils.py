@@ -54,7 +54,7 @@ def get_session(session_id: int):
         "system_prompt": session["system_prompt"],
         "messages": messages,
     }
-    filename = f"session_{session_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    filename = f"logs/session_{session_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
     file_write(filename, json.dumps(session_data, indent=2))
     print(f"Session data saved to {filename}")
 
