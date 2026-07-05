@@ -96,6 +96,10 @@ class BaseAgent:
             else:
                 messages[0]["content"] = final_system_prompt
 
+            if query:
+                messages.append({"role": "user", "content": query})
+                self.session_db.add_message(session_id, "user", query)
+
             # --- Phase 3: Agent-switch detection ---
             # session = self.session_db.get_session(session_id)
             # stored_agent = session["agent_name"] if session else ""
@@ -118,10 +122,6 @@ class BaseAgent:
             ]
             self.session_db.add_message(session_id, "user", query)
 
-        if query:
-            messages.append({"role": "user", "content": query})
-            self.session_db.add_message(session_id, "user", query)
-
         for turn in range(self.max_turns):
             if self._shutdown_requested:
                 print(
@@ -130,8 +130,8 @@ class BaseAgent:
                 return
 
             print(f"\n--- Turn {turn + 1} ---")
-            if turn == 0 and messages[0]["role"] != "system":
-                messages.insert(0, {"role": "system", "content": final_system_prompt})
+            # if turn == 0 and messages[0]["role"] != "system":
+            #     messages.insert(0, {"role": "system", "content": final_system_prompt})
 
             logging.debug("Messages: %s", messages)
             
