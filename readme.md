@@ -18,13 +18,14 @@ The framework is intentionally minimal — no heavy dependencies, no cloud lock-
 basic-agents/
 ├── agents/              # One subdirectory per agent (e.g. agents/default/)
 │   └── <name>/
-│       └── agent.py    # Must export a class named <Name>Agent
-├── core/                # Base agent class and shared loop logic
+│       ├── agent.py          # Must export a class named <Name>Agent
+│       ├── system_prompt.txt # Agent-specific system prompt
+│       └── tools.py          # Agent-specific tools
+├── core/                # Base agent class, tool registry, and shared loop logic
 ├── db/                  # SQLite session persistence (session_db.py)
-├── utils/               # File and query helpers (file_utils.py)
+├── utils/               # File helpers, LLM client, session manager, tool executor
 ├── tests/               # pytest test suite
-├── main.py              # CLI entry point
-├── session_utils.py     # Session management CLI
+├── main.py              # CLI entry point with run + session subcommands
 ├── config.py            # Global config (FILES_BASE_DIR)
 ├── providers.json       # Provider/model config (not committed — copy providers.example.json)
 ├── providers.example.json # Template for providers.json
@@ -45,20 +46,29 @@ pip install -r requirements.txt
 pip install -r requirements-dev.txt
 ```
 
-## Running an Agent
+## Usage
+
+The CLI uses subcommands. The two main commands are `run` (to execute an agent) and `session` (to manage sessions).
+
+### Running an Agent
 
 Providers and models are configured in `providers.json` (see [Providers](#providers)). The default provider and model are picked up automatically, so the simplest invocation is:
 
 ```bash
-python main.py \
+python main.py run \
   --agent default \
   --query "What files are in my workspace?"
 ```
 
+> **Note:** For backward compatibility, you can omit the `run` subcommand — the old flat-style invocation still works:
+> ```bash
+> python main.py --agent default --query "What files are in my workspace?"
+> ```
+
 To pick a specific provider and model:
 
 ```bash
-python main.py \
+python main.py run \
   --agent default \
   --provider deepseek \
   --model deepseek-v4-flash \
@@ -69,7 +79,7 @@ python main.py \
 List everything configured in `providers.json`:
 
 ```bash
-python main.py --list-providers
+python main.py run --list-providers
 ```
 
 ### Overriding the Endpoint Directly
@@ -77,7 +87,7 @@ python main.py --list-providers
 If you want to bypass `providers.json` entirely (e.g. for a one-off local server), pass `--llm-base`, `--model`, and optionally `--api-key`:
 
 ```bash
-python main.py \
+python main.py run \
   --agent default \
   --query "Quick question" \
   --llm-base http://localhost:8080 \
@@ -89,20 +99,30 @@ This works with any provider that exposes an OpenAI-compatible `/chat/completion
 
 ### Long-running Tasks
 
-For tasks that span many tool calls — large refactors, file processing pipelines, multi-step research — set `--max-turns` generously. If the agent hits the limit before finishing, resume from where it left off using `--resume-session`:
+For tasks that span many tool calls — large refactors, file processing pipelines, multi-step research — set `--max-turns` generously. If the agent hits the limit before finishing, resume from where it left off.
+
+Resume a specific session by ID:
 
 ```bash
 # Start a long task
-python main.py --agent default --query "Audit and fix all TODO comments in the repo" \
+python main.py run --agent default --query "Audit and fix all TODO comments in the repo" \
   --max-turns 100 --session-name "todo-audit"
 
-# If it stops, resume
-python main.py --agent default --query "Continue" --resume-session 3 --max-turns 100
+# If it stops, resume by session ID
+python main.py run --agent default --query "Continue" --resume-session 3 --max-turns 100
 ```
+
+Or resume the latest active session automatically with `--continue`:
+
+```bash
+python main.py run --agent default --query "Continue" --continue --max-turns 100
+```
+
+> **Note:** `--continue` and `--resume-session` are mutually exclusive.
 
 Sessions persist the full conversation history, so the agent picks up with complete context intact.
 
-### CLI Options
+### CLI Options — `run` subcommand
 
 | Flag | Default | Description |
 |---|---|---|
@@ -116,7 +136,8 @@ Sessions persist the full conversation history, so the agent picks up with compl
 | `--files-base-dir` | `/workspace` | Base directory exposed to file tools |
 | `--include` | — | Path to a file whose contents are appended to the query |
 | `--lines` | — | Line range from `--include`, e.g. `10-20` or `20` |
-| `--resume-session` | — | Resume an existing session by ID — useful when max turns is reached |
+| `--resume-session` | — | Resume an existing session by ID |
+| `--continue` | — | Resume the latest active session (mutually exclusive with `--resume-session`) |
 | `--session-name` | `Default Session` | Name for a new session |
 | `--list-providers` | — | List configured providers and models, then exit |
 
@@ -126,35 +147,63 @@ You can inline a file (or a slice of it) into your query:
 
 ```bash
 # Include entire file
-python main.py --agent default --query "Explain this code" --include ./myfile.py
+python main.py run --agent default --query "Explain this code" --include ./myfile.py
 
 # Include only lines 10–40
-python main.py --agent default --query "What does this function do?" \
+python main.py run --agent default --query "What does this function do?" \
   --include ./myfile.py --lines 10-40
 ```
 
 ## Session Management
 
-Sessions store conversation history in a local SQLite database, allowing agents to resume where they left off.
+Sessions store conversation history in a local SQLite database, allowing agents to resume where they left off. All session operations are available via the `session` subcommand:
 
 ```bash
 # Create a session with a custom system prompt
-python session_utils.py create --name "My Project" --system-prompt "You are a coding assistant."
+python main.py session create --name "My Project" --system-prompt "You are a coding assistant."
 
 # List all active sessions
-python session_utils.py list
+python main.py session list
 
 # Export a session to JSON
-python session_utils.py get --id 1
+python main.py session get --id 1
 
 # Delete a session
-python session_utils.py delete --id 1
+python main.py session delete --id 1
 ```
 
-To resume a session when running an agent:
+### Compressing Sessions
+
+Long sessions can be compressed to save storage and reduce context overhead. This exports the raw conversation to a JSON file and replaces it with a compressed summary:
 
 ```bash
-python main.py --agent default --query "Continue" --resume-session 1
+python main.py session compress --id 1
+```
+
+Options for compression:
+
+| Flag | Default | Description |
+|---|---|---|
+| `--id` | (required) | Session ID to compress |
+| `--output-dir` | `logs` | Directory for the raw JSON export |
+| `--summarize` | — | Also generate an LLM summary after compression |
+| `--provider` | `providers.json` default | Provider for summarization |
+| `--model` | `providers.json` default | Model for summarization |
+| `--llm-base` | — | Override LLM base URL for summarization |
+| `--api-key` | — | Override API key for summarization |
+
+### Resuming a Session
+
+When running an agent, resume a specific session by ID:
+
+```bash
+python main.py run --agent default --query "Continue" --resume-session 1
+```
+
+Or resume the latest active session automatically:
+
+```bash
+python main.py run --agent default --query "Continue" --continue
 ```
 
 ## Creating a Custom Agent
@@ -164,13 +213,15 @@ python main.py --agent default --query "Continue" --resume-session 1
 ```
 agents/myagent/
 ├── __init__.py
-└── agent.py
+├── agent.py
+├── system_prompt.txt   # (optional) Agent-specific system prompt
+└── tools.py            # (optional) Agent-specific tools
 ```
 
 2. In `agent.py`, define a class named `MyagentAgent` (capitalized agent name + `Agent`):
 
 ```python
-from core.base_agent import BaseAgent  # adjust import to match actual base class
+from core.base_agent import BaseAgent
 
 class MyagentAgent(BaseAgent):
     def __init__(self, model, llm_base, max_turns, resume_session, session_name, api_key):
@@ -191,7 +242,7 @@ class MyagentAgent(BaseAgent):
 3. Run it:
 
 ```bash
-python main.py --agent myagent --query "Do something"
+python main.py run --agent myagent --query "Do something"
 ```
 
 The framework discovers agents by directory name, so no registration step is needed.
@@ -236,12 +287,12 @@ cp providers.example.json providers.json
 
 ## Configuration
 
-`FILES_BASE_DIR` controls the root directory that file tools can access. It defaults to `/workspace` and can be overridden via environment variable or `--files-base-dir`:
+`FILES_BASE_DIR` controls the root directory that file tools can access. It defaults to `/workspace` (or `./workspace` on Windows) and can be overridden via environment variable or `--files-base-dir`:
 
 ```bash
 export FILES_BASE_DIR=/home/user/projects
 # or
-python main.py --agent default --query "..." --files-base-dir /home/user/projects
+python main.py run --agent default --query "..." --files-base-dir /home/user/projects
 ```
 
 ## Running Tests

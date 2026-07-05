@@ -130,9 +130,9 @@ def compress_session_cmd(
             agent_name=agent_name,
         )
         # Add system message + summary as user message
-        db.add_message(
-            final_id, role="system", content=""
-        )  # placeholder — agent fills at runtime
+        # db.add_message(
+        #     final_id, role="system", content=""
+        # )  # placeholder — agent fills at runtime
         db.add_message(final_id, role="user", content=summary)
         print(f"[Summarize] Summarized session created with ID: {final_id}")
         return 0
