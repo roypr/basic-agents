@@ -11,7 +11,10 @@ def safe_path(path: str | None = None) -> Path:
         return base_dir  # "no path specified" = the base directory itself
     candidate = (base_dir / path).resolve()
     if base_dir not in [candidate, *candidate.parents]:
-        raise ValueError(...)
+        raise ValueError(
+            f"Path '{path}' resolves outside the allowed base directory "
+            f"({base_dir}). Use a path relative to the base directory."
+        )
     return candidate
 
 
