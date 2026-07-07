@@ -52,21 +52,25 @@ def read_file_section(path: str, line_range):
     if not file_path.is_file():
         raise FileNotFoundError(f"Included file not found: {path}")
 
-    text = file_path.read_text(encoding="utf-8")
-    text = unicodedata.normalize("NFKC", text)
-    
-    if line_range is None:
-        return text
+    result = []
 
-    lines = text.splitlines(keepends=True)
+    with open(file_path, "r", encoding="utf-8") as f:
+        lines = f.readlines()
+    
+    for i in range(0, len(lines)):
+        result.append(f"Line {i + 1}:{lines[i]}")
+
+    if line_range is None:
+        return "".join(result)
+
     start, end = line_range
-    if start > len(lines):
+    if start > len(result):
         raise ValueError(
             f"Requested line range {start}-{end} exceeds file length ({len(lines)} lines)."
         )
 
     end = min(end, len(lines))
-    return "".join(lines[start - 1 : end])
+    return "".join(result[start - 1 : end])
 
 
 def build_query(query: str, include_path: str | None, line_range):
