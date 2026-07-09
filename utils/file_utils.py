@@ -96,7 +96,7 @@ def build_query(query: str, include_path: str | None, line_range):
 
 def encode_image_base64(image_path: str) -> tuple[str, str]:
     """Read an image file and return (mime_type, base64_data)."""
-    path = safe_path(image_path)
+    path = Path(image_path)
     if not path.is_file():
         raise FileNotFoundError(f"Image file not found: {image_path}")
 
