@@ -1,9 +1,8 @@
 import os
 import json
-import re
-import unicodedata
 from pathlib import Path
 from config import FILES_BASE_DIR
+
 
 def safe_path(path: str | None = None) -> Path:
     base_dir = Path(FILES_BASE_DIR).resolve()
@@ -45,7 +44,9 @@ def parse_line_range(value: str):
             raise ValueError("Invalid --lines format. Use 10-20 or 20.") from exc
 
     if start < 1 or end < 1 or start > end:
-        raise ValueError("Invalid --lines range. Use a positive range like 10-20 or 20.")
+        raise ValueError(
+            "Invalid --lines range. Use a positive range like 10-20 or 20."
+        )
 
     return start, end
 
@@ -59,7 +60,7 @@ def read_file_section(path: str, line_range):
 
     with open(file_path, "r", encoding="utf-8") as f:
         lines = f.readlines()
-    
+
     for i in range(0, len(lines)):
         result.append(f"Line {i + 1}:{lines[i]}")
 
@@ -92,6 +93,32 @@ def build_query(query: str, include_path: str | None, line_range):
         return f"{query.strip()}\n\n{include_block}"
     return include_block
 
+
+def encode_image_base64(image_path: str) -> tuple[str, str]:
+    """Read an image file and return (mime_type, base64_data)."""
+    path = safe_path(image_path)
+    if not path.is_file():
+        raise FileNotFoundError(f"Image file not found: {image_path}")
+
+    suffix = path.suffix.lower()
+    mime_map = {
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".gif": "image/gif",
+        ".webp": "image/webp",
+        ".bmp": "image/bmp",
+    }
+    mime = mime_map.get(suffix, "image/png")
+
+    import base64
+
+    with open(path, "rb") as f:
+        b64_data = base64.b64encode(f.read()).decode("utf-8")
+
+    return mime, b64_data
+
+
 def load_tool_definition() -> dict:
     json_path = Path("utils/tool_definition.json").resolve()
     try:
@@ -100,8 +127,11 @@ def load_tool_definition() -> dict:
     except FileNotFoundError:
         raise FileNotFoundError("The file 'tool_definition.json' was not found.")
     except json.JSONDecodeError as e:
-        raise json.JSONDecodeError(f"Error decoding JSON from 'tool_definition.json': {e}") from e
-    
+        raise json.JSONDecodeError(
+            f"Error decoding JSON from 'tool_definition.json': {e}"
+        ) from e
+
+
 def _file_read(path: str) -> str:
     abs_path = safe_path(path)
 
@@ -115,12 +145,14 @@ def _file_read(path: str) -> str:
 
     return "".join(result)
 
+
 def _file_write(path: str, content: str):
     abs_path = safe_path(path)
     abs_path.parent.mkdir(parents=True, exist_ok=True)
 
     with open(abs_path, "w", encoding="utf-8") as f:
         f.write(content)
+
 
 def _file_edit(path: str, new_str: str, old_str: str = None):
     abs_path = safe_path(path)
@@ -143,7 +175,7 @@ def _read_lines(path: str, start_line: int, end_line: int) -> str:
     if not Path(abs_path).exists():
         raise FileNotFoundError(f"File not found: {abs_path}")
 
-    with open(abs_path, 'r', encoding='utf-8') as f:
+    with open(abs_path, "r", encoding="utf-8") as f:
         lines = f.readlines()
 
     total_lines = len(lines)
@@ -166,57 +198,61 @@ def _read_lines(path: str, start_line: int, end_line: int) -> str:
 
     return "".join(result)
 
-def _replace_lines(path: str, start_line: int, new_content: str, end_line: int = None) -> str:
+
+def _replace_lines(
+    path: str, start_line: int, new_content: str, end_line: int = None
+) -> str:
     abs_path = safe_path(path)
 
-    with open(abs_path, 'r', encoding='utf-8') as f:
+    with open(abs_path, "r", encoding="utf-8") as f:
         lines = f.readlines()
     total_lines = len(lines)
 
-    if new_content and not new_content.endswith('\n'):
-        new_content += '\n'
+    if new_content and not new_content.endswith("\n"):
+        new_content += "\n"
     new_lines = new_content.splitlines(keepends=True)
 
     if end_line is None:
         if start_line < 1 or start_line > total_lines:
             raise ValueError(f"start_line {start_line} out of range (1–{total_lines})")
-        result = lines[:start_line - 1] + new_lines + lines[start_line:]  # ← fixed
+        result = lines[: start_line - 1] + new_lines + lines[start_line:]  # ← fixed
         action = f"Replaced line {start_line} in"
     else:
         end_line = min(end_line, total_lines)
         if start_line < 1 or end_line < 1 or start_line > end_line:
             raise ValueError(f"Invalid line range {start_line}-{end_line}")
-        result = lines[:start_line - 1] + new_lines + lines[end_line:]
+        result = lines[: start_line - 1] + new_lines + lines[end_line:]
         action = f"Replaced lines {start_line}-{end_line} in"
 
     with open(abs_path, "w", encoding="utf-8") as f:
-        f.write(''.join(result))
+        f.write("".join(result))
 
     new_line_count = len(new_lines)
     total_after = len(result)
     return f"{action} {path} ({new_line_count} lines written, file now {total_after} lines)"
 
+
 def _remove_lines(path: str, start_line: int, end_line: int = None) -> str:
     abs_path = safe_path(path)
 
-    with open(abs_path, 'r', encoding='utf-8') as f:
+    with open(abs_path, "r", encoding="utf-8") as f:
         lines = f.readlines()
     total_lines = len(lines)
 
     if end_line is None:
         if start_line < 1 or start_line > total_lines:
             raise ValueError(f"start_line {start_line} out of range (1–{total_lines})")
-        result = lines[:start_line - 1] + lines[start_line:]
+        result = lines[: start_line - 1] + lines[start_line:]
         action = f"Removed line {start_line} in"
     else:
         end_line = min(end_line, total_lines)
         if start_line < 1 or end_line < 1 or start_line > end_line:
             raise ValueError(f"Invalid line range {start_line}-{end_line}")
-        result = lines[:start_line - 1] + lines[end_line:]
+        result = lines[: start_line - 1] + lines[end_line:]
         action = f"Removed lines {start_line}-{end_line} in"
-    
+
     with open(abs_path, "w", encoding="utf-8") as f:
-        f.write(''.join(result))
+        f.write("".join(result))
 
     total_after = len(result)
     return f"{action} {path} (file now {total_after} lines)"

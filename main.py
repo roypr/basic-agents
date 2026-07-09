@@ -4,7 +4,7 @@ import sys
 from importlib import import_module
 from pathlib import Path
 
-from utils.file_utils import build_query, parse_line_range
+from utils.file_utils import build_query, encode_image_base64, parse_line_range
 from utils.provider_config import ProviderError, resolve_provider
 
 
@@ -78,6 +78,17 @@ def do_run(args):
 
     combined_query = build_query(args.query, args.include, line_range)
 
+    # Process --image if provided
+    image_data = None
+    if args.image:
+        try:
+            mime, b64 = encode_image_base64(args.image)
+            image_data = {"mime": mime, "data": b64}
+            print(f"[Image] Loaded {args.image} ({mime}, {len(b64)} base64 chars)")
+        except (FileNotFoundError, ValueError) as exc:
+            print(f"Error: {exc}")
+            sys.exit(1)
+
     try:
         agent_cls = get_agent_class(args.agent)
     except ValueError as exc:
@@ -105,7 +116,7 @@ def do_run(args):
     )
 
     try:
-        agent.run(combined_query)
+        agent.run(combined_query, image_data=image_data)
     except KeyboardInterrupt:
         print("\nInterrupted by user. Shutting down gracefully...")
         sys.exit(0)
@@ -165,6 +176,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     run_parser.add_argument(
         "--include", default=None, help="Optional file path to include content from"
+    )
+    run_parser.add_argument(
+        "--image", default=None, help="Optional image file path to send to the AI"
     )
     run_parser.add_argument(
         "--lines",
