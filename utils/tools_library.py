@@ -68,7 +68,7 @@ def finish(message: str = "") -> str:
 def get_all_files(base_dir: str = ".") -> str:
     abs_path = safe_path(base_dir)
     all_files = []
-    excluded_dirs = {".git", "node_modules", ".venv"}
+    excluded_dirs = {".git", "node_modules", ".venv", "vendor"}
     for full_path in abs_path.rglob("*"):
         if not full_path.is_file():
             continue
