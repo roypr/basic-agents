@@ -244,6 +244,26 @@ def syntax_check_file(rel_path: str) -> str | None:
     except Exception as e:
         return f"Syntax check failed: {e}"
 
+def tree_sitter_tags(path: str) -> str:
+    """
+    Run tree-sitter tags on a source file to extract symbols/tags.
+    Only supports Python, JavaScript, TypeScript, and PHP files.
+    Checks for tree-sitter availability first, then validates the file extension.
+    """
+    language = detect_language(path)
+    if language not in ("python", "javascript", "typescript", "php"):
+        return f"Unsupported language for tree-sitter tags: {language or 'unknown'}"
+
+    if not shutil.which("tree-sitter"):
+        return "Error: tree-sitter is not installed."
+
+    command = f'tree-sitter tags "{path}"'
+    result = run_command(command, timeout=30)
+
+    print(f"[Tool: Tree-sitter Tags] {path}")
+    return result
+
+
 def file_write(path: str, content: str) -> str:
     result = ""
 
@@ -347,6 +367,25 @@ tools = [
     all_tools["file_delete"],
     all_tools["run_command"],
     all_tools["finish"],
+    {
+        "type": "function",
+        "function": {
+            "name": "tree_sitter_tags",
+            "description": "Lists the important code definitions in a source file without reading the entire file. Use this tool first to locate relevant classes, functions, methods, and other symbols, then fetch only the definitions you need. Supports Python, JS, TS, PHP only.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Relative file path"
+                    }
+                },
+                "required": [
+                    "path"
+                ]
+            }
+        }
+    },
     {
         "type": "function",
         "function": {
@@ -477,5 +516,6 @@ TOOL_MAP = {
     "remove_lines" : remove_lines,
     "replace_lines": replace_lines,
     "run_command": run_command,
+    "tree_sitter_tags": tree_sitter_tags,
     "finish": finish,
 }
