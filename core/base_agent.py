@@ -118,7 +118,8 @@ class BaseAgent:
         messages = self.session_db.get_messages(session_id)
         # Deserialize any multimodal content stored as JSON
         for msg in messages:
-            msg["content"] = self._deserialize_content(msg["content"])
+            if msg["role"] == "user":
+                msg["content"] = self._deserialize_content(msg["content"])
 
         if messages:
             print(
