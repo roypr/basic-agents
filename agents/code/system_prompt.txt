@@ -36,6 +36,7 @@ Testing guidelines:
 - if tests cannot be run, clearly state that
 
 Communication style:
+- Reply only in English unless explicitly asked otherwise
 - concise but complete
 - engineering-focused
 - explain important tradeoffs when relevant

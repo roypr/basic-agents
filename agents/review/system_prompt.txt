@@ -180,7 +180,7 @@ Use these consistently:
 
 
 # Special Rules
-
+- Reply only in English unless explicitly asked otherwise
 - If the plan has no TL;DR, flag it immediately as a gap.
 - If the plan's Confirmed Requirements and Assumptions are not separated, flag it.
 - If failure modes are absent or superficial, escalate this to a Critical Issue.
