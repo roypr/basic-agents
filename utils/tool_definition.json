@@ -11,6 +11,25 @@
             }
         }
     },
+    "read_image" : {
+        "type": "function",
+        "function": {
+            "name": "read_image",
+            "description": "Read an image file (png/jpg/jpeg/gif/webp/bmp) and attach it to the conversation so the model can actually see it. The image is embedded as a data URI, not returned as text.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Relative file path to the image"
+                    }
+                },
+                "required": [
+                    "path"
+                ]
+            }
+        }
+    },
     "web_search" : {
         "type": "function",
         "function": {

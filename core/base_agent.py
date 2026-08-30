@@ -93,6 +93,23 @@ class BaseAgent:
         content.append({"type": "image_url", "image_url": {"url": data_uri}})
         return content
 
+    def _tool_content(self, result: str) -> str | list:
+        """Convert structured tool output (e.g. read_image JSON) into multimodal
+        content so the model can actually see the image in the tool result."""
+        try:
+            parsed = json.loads(result)
+        except (json.JSONDecodeError, TypeError):
+            return result
+
+        if isinstance(parsed, dict) and parsed.get("type") == "image":
+            data_uri = f"data:{parsed['mime']};base64,{parsed['data']}"
+            note = parsed.get("note") or "Image loaded."
+            return [
+                {"type": "text", "text": note},
+                {"type": "image_url", "image_url": {"url": data_uri}},
+            ]
+        return result
+
     def _serialize_content(self, content) -> str:
         """Serialize message content to string for DB storage."""
         if isinstance(content, list):
@@ -198,15 +215,19 @@ class BaseAgent:
 
             for tc, fn_name, fn_args, result in tool_results:
                 tool_call_id = tc.get("id")
+                content = self._tool_content(result)
                 messages.append(
                     {
                         "role": "tool",
                         "tool_call_id": tool_call_id,
-                        "content": result,
+                        "content": content,
                     }
                 )
                 self.session_db.add_message(
-                    session_id, "tool", result, tool_call_id=tool_call_id
+                    session_id,
+                    "tool",
+                    self._serialize_content(content),
+                    tool_call_id=tool_call_id,
                 )
 
             if any(fn_name == "finish" for _, fn_name, _, _ in tool_results):
