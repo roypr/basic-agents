@@ -18,6 +18,7 @@ from .file_utils import (
     _file_edit,
     _read_lines,
     _replace_lines,
+    encode_image_base64,
 )
 
 
@@ -26,6 +27,31 @@ def get_current_date() -> str:
     result = now.strftime("UTC: %Y-%m-%d %H:%M:%S")
     print(f"[Tool: Date] {result}")
     return result
+
+
+def read_image(path: str) -> str:
+    """Read an image file and return structured JSON so the agent loop can
+    attach it to the conversation as a real image (data URI), not just text."""
+    try:
+        abs_path = safe_path(path)
+        mime, b64 = encode_image_base64(str(abs_path))
+        result = json.dumps(
+            {
+                "type": "image",
+                "mime": mime,
+                "data": b64,
+                "path": path,
+                "note": (
+                    f"Image loaded from '{path}' ({mime}, {len(b64)} base64 chars). "
+                    "You can now see and analyze it."
+                ),
+            }
+        )
+        print(f"[Tool: Read Image] path: {path} ({mime}, {len(b64)} base64 chars)")
+        return result
+    except Exception as e:
+        print(f"[Tool: Read Image] Error: {e}")
+        return f"Error: {e}"
 
 
 def web_search(query: str, page: int = 1, results_per_page: int = 10) -> str:
@@ -163,9 +189,8 @@ def replace_lines(
         result = str(e)
     return result
 
-def remove_lines(
-    path: str, start_line: int, end_line: int = None
-) -> str:
+
+def remove_lines(path: str, start_line: int, end_line: int = None) -> str:
     result = ""
 
     try:
