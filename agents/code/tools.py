@@ -423,6 +423,7 @@ tools = [
     all_tools["file_read"],
     all_tools["file_delete"],
     all_tools["run_command"],
+    all_tools["read_image"],
     all_tools["finish"],
     {
         "type": "function",
