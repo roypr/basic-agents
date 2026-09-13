@@ -1,13 +1,23 @@
 import json
 import logging
 from db.session_db import SessionDB
+from core.permissions import AutoAllowResolver, PermissionPolicy
+from core.rule_store import InMemoryRuleStore
 from utils.http_utils import close_request_session
 from utils.llm_client import call_llm_streaming, get_adapter
 from utils.session_manager import init_session_db
 from utils.tool_executor import execute_tool_calls, shutdown_tool_executor
 
-
 SYSTEM_PROMPT = "You are a helpful assistant."
+
+# Content used to heal an assistant tool_call that never got a result because a
+# previous run died mid-turn (e.g. while prompting). The OpenAI contract needs
+# 1:1 tool_call/tool-result correspondence or the next request 400s.
+ORPHANED_TOOL_RESULT = (
+    "Error: tool call was not completed — the previous run was interrupted "
+    "before a result was produced. Do not assume this tool ran."
+)
+
 
 logging.basicConfig(
     filename="logs/app_errors.log",
@@ -28,6 +38,8 @@ class BaseAgent:
         session_name: str = "Default Session",
         api_key: str = "",
         use_tools: bool = True,
+        permission_policy: PermissionPolicy | None = None,
+        permission_resolver=None,
     ):
         self.name = name
         self.model = model
@@ -38,12 +50,22 @@ class BaseAgent:
         self.api_key = api_key
         self.use_tools = use_tools
         self._shutdown_requested = False
+        # Bound on the first run(); reused across REPL turns until reset.
+        self.session_id: int | None = None
 
         self.adapter = get_adapter(model)
         self.session_db = SessionDB()
         self.tools = self.get_tools()
         self.tool_map = self.get_tool_map()
         self.system_prompt = self.resolve_system_prompt()
+
+        # Per-agent policy: grading is scoped to the tools this agent exposes.
+        # Default resolver keeps one-shot `run` behavior backward compatible.
+        self.permission_policy = permission_policy or PermissionPolicy(
+            agent_tool_names=self.tool_map.keys(),
+            rule_store=InMemoryRuleStore(),
+            resolver=permission_resolver or AutoAllowResolver(),
+        )
 
     def resolve_system_prompt(self) -> str:
         return self.get_system_prompt()
@@ -116,23 +138,124 @@ class BaseAgent:
             return json.dumps(content)
         return content
 
+    @staticmethod
+    def _parse_tool_args(tc: dict) -> dict:
+        """Parse a tool call's arguments, mirroring the executor's parsing."""
+        raw_args = tc.get("function", {}).get("arguments")
+        try:
+            return (
+                json.loads(raw_args) if isinstance(raw_args, str) else (raw_args or {})
+            )
+        except json.JSONDecodeError:
+            return {}
+
+    @staticmethod
+    def _denial_text(outcome) -> str:
+        """Synthesize the tool-result text for a denied call."""
+        if outcome.message:
+            return (
+                f'Permission denied by user. The user says: "{outcome.message}". '
+                "Do not retry this tool unless explicitly asked."
+            )
+        return (
+            "Permission denied by user. Do not retry this tool unless explicitly asked."
+        )
+
+    def _recover_orphaned_tool_calls(self, session_id: int, messages: list) -> list:
+        """Heal assistant tool_calls that never got a matching tool result.
+
+        A run that dies mid-turn (e.g. while prompting) leaves persisted
+        tool_calls without results, which 400s on resume. We synthesize an abort
+        result AND persist it, so the session is fixed once and stays fixed.
+        """
+        answered = {
+            m.get("tool_call_id")
+            for m in messages
+            if m.get("role") == "tool" and m.get("tool_call_id")
+        }
+
+        recovered = []
+        for msg in messages:
+            recovered.append(msg)
+            if msg.get("role") != "assistant" or not msg.get("tool_calls"):
+                continue
+            for tc in msg["tool_calls"]:
+                call_id = tc.get("id")
+                if not call_id or call_id in answered:
+                    continue
+                recovered.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": call_id,
+                        "content": ORPHANED_TOOL_RESULT,
+                    }
+                )
+                self.session_db.add_message(
+                    session_id, "tool", ORPHANED_TOOL_RESULT, tool_call_id=call_id
+                )
+                answered.add(call_id)
+        return recovered
+
+    def _gate_and_execute(self, tool_calls: list) -> list:
+        """Run the permission gate, then execute approved calls concurrently.
+
+        The gate runs in the main thread, strictly before the executor. Results
+        are merged back in the original tool_call order (OpenAI contract).
+        """
+        approved = []
+        results: dict[int, tuple] = {}
+
+        for index, tc in enumerate(tool_calls):
+            fn_name = tc["function"]["name"]
+            fn_args = self._parse_tool_args(tc)
+            outcome = self.permission_policy.check(
+                fn_name, fn_args, tool_call_id=tc.get("id")
+            )
+            if outcome.error:
+                results[index] = (tc, fn_name, fn_args, outcome.message)
+            elif outcome.allowed:
+                approved.append((index, tc))
+            else:
+                results[index] = (tc, fn_name, fn_args, self._denial_text(outcome))
+
+        if approved:
+            approved_results = execute_tool_calls(
+                [tc for _, tc in approved], self.tool_map, self.tools
+            )
+            for (index, _tc), result in zip(approved, approved_results):
+                results[index] = result
+
+        return [results[i] for i in range(len(tool_calls))]
+
     def run(self, query: str, image_data: dict | None = None):
         print(
             f"[{self.name}] Using adapter: {type(self.adapter).__name__} for model '{self.model}'"
         )
 
         agent_dir = self._agent_dir_name()
-        session_id = init_session_db(
-            self.resume_session,
-            self.session_name,
-            self.system_prompt,
-            agent_name=agent_dir,
-        )
+
+        # Session binding: bind on the first run(), reuse it on every
+        # subsequent call (REPL turns) until reset via /new.
+        if self.session_id is not None:
+            session_id = self.session_id
+        else:
+            session_id = init_session_db(
+                self.resume_session,
+                self.session_name,
+                self.system_prompt,
+                agent_name=agent_dir,
+            )
+            self.session_id = session_id
+
+        # Standing permission rules are scoped to the bound session.
+        self.permission_policy.scope_key = session_id
 
         # Agent's own prompt is the authority — never overridden from DB
         final_system_prompt = self.system_prompt
 
         messages = self.session_db.get_messages(session_id)
+        # Heal sessions where a previous run died before producing tool results.
+        messages = self._recover_orphaned_tool_calls(session_id, messages)
         # Deserialize any multimodal content stored as JSON
         for msg in messages:
             if msg["role"] == "user":
@@ -206,7 +329,7 @@ class BaseAgent:
             if not tool_calls:
                 return
 
-            tool_results = execute_tool_calls(tool_calls, self.tool_map, self.tools)
+            tool_results = self._gate_and_execute(tool_calls)
             if self._shutdown_requested:
                 print(
                     f"[{self.name}] Shutdown requested during tool execution. Exiting. To resume session id {session_id}"

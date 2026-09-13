@@ -15,18 +15,18 @@ MVP scope = Phases 1–4 (+ Phase 6 continuous). Phase 5 is optional/off critica
 
 ## Phase 1 — Permission core (no UI). Pure, testable policy engine.
 
-- [ ] **T1. Create `core/permissions.py` — types + protocol.**
+- [x] **T1. Create `core/permissions.py` — types + protocol.**
   - `Decision` enum: `ALLOW_ONCE`, `ALLOW_ALWAYS`, `DENY_ONCE`, `DENY_ALWAYS`, `DENY_WITH_MESSAGE`.
   - `PermissionRequest` dataclass: `tool_name`, `args`, `tool_call_id`.
   - `PermissionOutcome` dataclass: `allowed: bool`, `message: str | None`, `decision: Decision`.
   - `PermissionResolver` protocol: `resolve(request) -> PermissionOutcome`.
   - `SAFE_TOOLS` global constant set: `get_current_date, glob_search, grep_search, get_all_files, read_lines, file_read, read_image, tree_sitter_tags, web_search, request_get, finish`.
   - Note: `tree_sitter_tags` is defined inline in `agents/code/tools.py`, not in `utils/tool_definition.json` — the set is hardcoded Python, so include it explicitly.
-- [ ] **T2. Create `core/rule_store.py`.**
+- [x] **T2. Create `core/rule_store.py`.**
   - `RuleStore` protocol: `get`/`set` keyed by `(scope, scope_key, tool_name)`.
   - `InMemoryRuleStore` implementation. v1: scope hardcoded `"session"`, `scope_key` = session ID.
   - Protocol exists so a SQLite store drops in later without touching callers.
-- [ ] **T3. Implement `PermissionPolicy` with per-agent grading resolution.**
+- [x] **T3. Implement `PermissionPolicy` with per-agent grading resolution.**
   - Constructor takes: the **agent's actual tool names** (keys of `self.tool_map`), the grading map, the rule store, and a resolver.
   - `check(tool_name, args) -> PermissionOutcome` resolves as:
     - `tool_name in agent_tool_names and tool_name in SAFE_TOOLS` → allow (safe, no prompt, no rule write).
@@ -34,30 +34,30 @@ MVP scope = Phases 1–4 (+ Phase 6 continuous). Phase 5 is optional/off critica
     - `tool_name not in agent_tool_names` → hallucinated tool: produce an **error** outcome (not a prompt): `"Error: unknown tool '{tool_name}' — not registered for this agent"`.
   - `DENY_WITH_MESSAGE` must never be written to the rule store (one-time redirect).
   - Rationale (from plan): "unknown" means *not in this agent's tool set*, not *not in SAFE_TOOLS*. The `default` agent exposes only `get_current_date`; without per-agent grading the fail-closed default would prompt for tools that can't run.
-- [ ] **T4. Add test/non-interactive resolvers** in `core/permissions.py`: `AutoAllowResolver`, `AutoDenyResolver`.
-- [ ] **T5. Unit tests `tests/unit/test_permissions.py`.**
+- [x] **T4. Add test/non-interactive resolvers** in `core/permissions.py`: `AutoAllowResolver`, `AutoDenyResolver`.
+- [x] **T5. Unit tests `tests/unit/test_permissions.py`.**
   - Grading resolution per-agent: safe, ask, hallucinated (all three branches).
   - Each of the five decision types; rule-store hit/miss; `DENY_WITH_MESSAGE` never persisted; `ALLOW_ALWAYS`/`DENY_ALWAYS` persisted with session scope key.
   - `AutoAllow`/`AutoDeny` behave as documented.
 
 ## Phase 2 — Gate integration. Wire the policy into the loop.
 
-- [ ] **T6. `core/base_agent.py` constructor (lines 20–46): accept + construct the policy.**
+- [x] **T6. `core/base_agent.py` constructor (lines 20–46): accept + construct the policy.**
   - Accept an optional `permission_policy` / permission-mode argument (tests inject their own).
   - After `self.tool_map = self.get_tool_map()` (line 45), construct `PermissionPolicy` from `self.tool_map.keys()` with an `InMemoryRuleStore` if none injected.
   - Default resolver for one-shot backward compat: `AutoAllowResolver` (existing scripts must keep working).
   - Add `self.session_id: int | None = None` (exposed for rule-store scope keys and the REPL).
-- [ ] **T7. Session binding contract in `run()` (session init at lines 124–130).**
+- [x] **T7. Session binding contract in `run()` (session init at lines 124–130).**
   - On entry: if `self.session_id` is not None → reuse it, skip `init_session_db`. Else create/resume via `init_session_db(self.resume_session, self.session_name, self.system_prompt, agent_name=agent_dir)` and **bind** `self.session_id = session_id`.
   - `/new` (Phase 4) resets `self.session_id = None; self.resume_session = None` → next `run()` re-binds to a fresh session.
   - `--continue` / `--resume-session` resolve the latest/given session ID once at startup, pass as `resume_session`; first `run()` resumes, binding keeps it stable.
-- [ ] **T8. Orphaned tool-call recovery on load — insert after `get_messages` (line 135).** **Highest-risk item in the plan.**
+- [x] **T8. Orphaned tool-call recovery on load — insert after `get_messages` (line 135).** **Highest-risk item in the plan.**
   - Detect: collect all `tool_call_id`s from assistant messages carrying `tool_calls`; subtract ids already answered by `role: "tool"` messages.
   - For each unmatched id: synthesize an abort `tool` result AND **persist it via `session_db.add_message(session_id, "tool", ..., tool_call_id=id)`** (write-on-load heals the DB once; resumed sessions otherwise 400).
-- [ ] **T9. Permission gate before `execute_tool_calls` (insert between lines 204 and 209).**
+- [x] **T9. Permission gate before `execute_tool_calls` (insert between lines 204 and 209).**
   - Sequential, main-thread loop over `tool_calls`: `policy.check(fn_name, fn_args)` per call.
   - Partition into approved / denied / error buckets. Approved list goes to `execute_tool_calls(tool_calls_approved, ...)` unchanged. Denied/errored calls never reach the executor.
-- [ ] **T10. Synthesis + ordered merge.**
+- [x] **T10. Synthesis + ordered merge.**
   - Produce results as `(tc, fn_name, fn_args, result_str)` tuples matching `execute_tool_calls`' shape so the existing merge loop (lines 216–231) and `finish` detection (line 233) work unmodified.
   - Denial content, exact shape (`role: "tool"`, original `tool_call_id`):
     - With message: `Permission denied by user. The user says: "<message>". Do not retry this tool unless explicitly asked.`
@@ -66,7 +66,7 @@ MVP scope = Phases 1–4 (+ Phase 6 continuous). Phase 5 is optional/off critica
   - Hallucinated tool content: `Error: unknown tool '{tool_name}' — not registered for this agent`.
   - Merge approved + denied + error in **original tool_call order**.
   - `finish` (SAFE) semantics: ends the current `run()` and returns control to the REPL prompt in interactive mode; does not exit the process.
-- [ ] **T11. Gate tests + conftest regression safety.**
+- [x] **T11. Gate tests + conftest regression safety.**
   - `tests/unit/test_base_agent_gate.py`: gate-before-execute ordering, ordered merge of approved/denied/error, denial text shape, orphan recovery **persists** rows (write-first test: seed assistant msg with `tool_calls`, no `tool` rows → load → assert `tool` rows exist in DB), session binding (two `run()` calls on one instance → same `session_id`, no new session created).
   - `tests/conftest.py`: fixture injecting `AutoAllowResolver` so the existing suite passes untouched.
 
