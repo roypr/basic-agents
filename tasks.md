@@ -72,39 +72,39 @@ MVP scope = Phases 1–4 (+ Phase 6 continuous). Phase 5 is optional/off critica
 
 ## Phase 3 — CLI resolver + prompt. The interactive prompt.
 
-- [ ] **T12. Create `cli/__init__.py` and `cli/prompt.py` (pure rendering).**
+- [x] **T12. Create `cli/__init__.py` and `cli/prompt.py` (pure rendering).**
   - Format a `PermissionRequest` into a human-readable prompt: pretty-printed args, truncated long values, scope labels on the "always" options. No I/O in this module.
-- [ ] **T13. Create `cli/resolver.py`.**
+- [x] **T13. Create `cli/resolver.py`.**
   - `CliPermissionResolver`: renders via `cli/prompt.py`, reads choice via `input()`; offers allow once / allow always / deny once / deny always / deny with message; loops until a valid choice; returns matching `PermissionOutcome`.
   - Non-interactive safety: **fail-closed (deny)** when stdin is not a TTY. Never silently allow because stdin isn't a TTY.
   - Factory for `--permission-mode` values (`allow` → AutoAllow, `deny`/default-non-tty → AutoDeny, `ask` → Cli).
-- [ ] **T14. `--permission-mode` flag + defaults (resolved decision).**
+- [x] **T14. `--permission-mode` flag + defaults (resolved decision).**
   - One-shot `run` defaults to `allow` (backward compat for scripts); new `chat`/`--interactive` REPL defaults to `ask`.
   - `--yes` / `--permission-mode allow` is the explicit escape hatch for non-interactive use.
   - Prompt blocking is indefinite in interactive mode (user is present) — documented, deliberate; the 300s per-call timeout is *after* the gate.
 
 ## Phase 4 — REPL. Persistent interactive loop.
 
-- [ ] **T15. `main.py`: `chat` subcommand / `--interactive`.**
+- [x] **T15. `main.py`: `chat` subcommand / `--interactive`.**
   - Add subparser in `build_parser()`; register in `main()` argv dispatch (line 283: `("run", "session", "chat")`).
   - Reuse `do_run`'s `--continue` / `--resume-session` resolution (lines 51–64) and provider/model resolution; pass `resume_session` into the agent constructor.
   - **Do not** copy `do_run`'s `finally: agent.shutdown()` (lines 123–124) — the agent must stay alive across turns.
-- [ ] **T16. Create `cli/repl.py` — the loop.**
+- [x] **T16. Create `cli/repl.py` — the loop.**
   - Resolve provider/model/session once; hold one agent instance for the process lifetime.
   - Per turn: read input → `agent.run(query)`. Catch `KeyboardInterrupt` per turn → return to prompt, session stays resumable (do not `sys.exit`).
   - Hitting `max-turns` returns control to the prompt with the session resumable (one-shot behavior already ends the run).
   - `shutdown()` called only on `/quit` or EOF, never between turns (plan failure #6).
   - `finish` (SAFE tool) ends the current `run()` and returns to the prompt; process keeps running.
   - Streaming still `print()`s from `utils/llm_client.py` — tolerate until Phase 5.
-- [ ] **T17. Meta-commands.**
+- [x] **T17. Meta-commands.**
   - `/quit` (shutdown + exit), `/new` (reset `session_id`/`resume_session` binding → next turn re-binds fresh), `/session` (read-only v1: print bound session ID + name), `/agents`, `/provider`, `/model` (re-instantiate agent; preserve binding semantics), `/help`.
   - `/permissions` deferred to the persistence phase (rules reset on restart anyway).
   - Note: because rules are keyed by session scope, `/new` naturally scopes out old allow/deny-always rules.
-- [ ] **T18. REPL smoke test** with piped input: prompt appears, one turn executes via mocked agent, `KeyboardInterrupt` returns to prompt, `shutdown()` fires exactly once on `/quit`/EOF, `finish` returns to prompt not exit.
+- [x] **T18. REPL smoke test** with piped input: prompt appears, one turn executes via mocked agent, `KeyboardInterrupt` returns to prompt, `shutdown()` fires exactly once on `/quit`/EOF, `finish` returns to prompt not exit.
 
 ## Phase 5 — Streaming sink + polish (optional, off critical path)
 
-- [ ] **T19. `cli/sink.py` + `llm_client` sink parameter.**
+- [x] **T19. `cli/sink.py` + `llm_client` sink parameter.**
   - Optional stream-sink param on `utils/llm_client.py` streaming path (defaults to current `print()` behavior so one-shot output is unchanged); REPL passes a sink for clean turn separation. Only needed for clean REPL rendering.
 
 ## Phase 6 — Tests + hardening (runs alongside Phases 2–5)

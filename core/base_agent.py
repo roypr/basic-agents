@@ -40,6 +40,7 @@ class BaseAgent:
         use_tools: bool = True,
         permission_policy: PermissionPolicy | None = None,
         permission_resolver=None,
+        stream_sink=None,
     ):
         self.name = name
         self.model = model
@@ -49,6 +50,8 @@ class BaseAgent:
         self.session_name = session_name
         self.api_key = api_key
         self.use_tools = use_tools
+        # Optional rendering sink for streamed output (None -> print directly).
+        self.stream_sink = stream_sink
         self._shutdown_requested = False
         # Bound on the first run(); reused across REPL turns until reset.
         self.session_id: int | None = None
@@ -306,6 +309,7 @@ class BaseAgent:
                 adapter=self.adapter,
                 use_tools=self.use_tools,
                 tools=self.tools,
+                sink=self.stream_sink,
             )
 
             tool_calls = self.adapter.extract_tool_calls(msg)

@@ -66,6 +66,7 @@ def _run_agent():
     agent.session_name = "Test Session"
     agent.api_key = ""
     agent.use_tools = True
+    agent.stream_sink = None
     agent._shutdown_requested = False
     agent.session_id = None
     agent.adapter = _FakeAdapter()
@@ -365,3 +366,27 @@ class TestSessionBinding:
         agent.run("hi")
 
         assert agent.permission_policy.scope_key == 77
+
+
+@pytest.mark.unit
+class TestStreamSink:
+    def test_run_forwards_stream_sink_to_llm(self, monkeypatch):
+        captured = {}
+
+        monkeypatch.setattr(
+            "core.base_agent.init_session_db",
+            lambda resume, name, prompt, agent_name="": 5,
+        )
+
+        def fake_llm(*args, **kwargs):
+            captured.update(kwargs)
+            return {"role": "assistant", "content": "ok"}
+
+        monkeypatch.setattr("core.base_agent.call_llm_streaming", fake_llm)
+
+        sink = object()
+        agent = _run_agent()
+        agent.stream_sink = sink
+        agent.run("hi")
+
+        assert captured["sink"] is sink

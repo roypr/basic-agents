@@ -4,6 +4,7 @@ import sys
 from importlib import import_module
 from pathlib import Path
 
+from cli.resolver import build_resolver
 from utils.file_utils import build_query, encode_image_base64, parse_line_range
 from utils.provider_config import ProviderError, resolve_provider
 
@@ -37,18 +38,8 @@ def resolve_llm_config(provider, model, llm_base, api_key):
     return provider_cfg.api_base_url, provider_cfg.api_key, provider_cfg.model
 
 
-def do_run(args):
-    """Handle the 'run' subcommand (and backward-compatible bare calls)."""
-    if args.list_providers:
-        from utils.provider_config import list_models
-
-        for provider, models in list_models().items():
-            print(f"[{provider}]")
-            for m in models:
-                print(f"  - {m}")
-        return
-
-    # Resolve --continue (mutually exclusive with --resume-session)
+def resolve_resume_session(args):
+    """Resolve --continue / --resume-session into a session ID (or None)."""
     session_id = args.resume_session
     if args.continue_flag:
         if args.resume_session is not None:
@@ -62,6 +53,40 @@ def do_run(args):
             print("Error: No active sessions to continue.")
             sys.exit(1)
         print(f"[Continue] Resuming latest session (ID: {session_id})")
+    return session_id
+
+
+def _effective_permission_mode(args, interactive: bool) -> str:
+    """Resolve the permission mode from the flags.
+
+    ``--yes`` forces ``allow`` (the non-interactive escape hatch). Otherwise an
+    explicit ``--permission-mode`` wins; the fallback is ``allow`` for one-shot
+    ``run`` (backward compatible) and ``ask`` for the interactive REPL.
+    """
+    if getattr(args, "yes", False):
+        return "allow"
+    mode = getattr(args, "permission_mode", None)
+    if mode:
+        return mode
+    return "ask" if interactive else "allow"
+
+
+def do_run(args):
+    """Handle the 'run' subcommand (and backward-compatible bare calls)."""
+    if args.list_providers:
+        from utils.provider_config import list_models
+
+        for provider, models in list_models().items():
+            print(f"[{provider}]")
+            for m in models:
+                print(f"  - {m}")
+        return
+
+    # --interactive routes to the REPL (shared code path with the `chat` cmd).
+    if getattr(args, "interactive", False):
+        return do_chat(args)
+
+    session_id = resolve_resume_session(args)
 
     if args.files_base_dir:
         os.environ["FILES_BASE_DIR"] = args.files_base_dir
@@ -106,6 +131,9 @@ def do_run(args):
     if args.llm_base is None:
         print(f"[Provider] {args.provider or 'default'} -> {model} @ {llm_base}")
 
+    resolver = build_resolver(
+        _effective_permission_mode(args, interactive=False), scope="session"
+    )
     agent = agent_cls(
         model=model,
         llm_base=llm_base,
@@ -113,6 +141,7 @@ def do_run(args):
         resume_session=session_id,
         session_name=args.session_name,
         api_key=api_key,
+        permission_resolver=resolver,
     )
 
     try:
@@ -122,6 +151,19 @@ def do_run(args):
         sys.exit(0)
     finally:
         agent.shutdown()
+
+
+def do_chat(args):
+    """Handle the 'chat' subcommand (interactive REPL)."""
+    from cli.repl import run_repl
+
+    if args.files_base_dir:
+        os.environ["FILES_BASE_DIR"] = args.files_base_dir
+
+    args.resume_session = resolve_resume_session(args)
+    return run_repl(
+        args, permission_mode=_effective_permission_mode(args, interactive=True)
+    )
 
 
 def do_session(args):
@@ -161,16 +203,59 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers = parser.add_subparsers(dest="command")
 
+    def add_common_agent_args(p):
+        p.add_argument("--agent", default="default", help="Select which agent to run")
+        p.add_argument(
+            "--files-base-dir",
+            default=None,
+            help="Optional base directory for file tools (default /workspace)",
+        )
+        p.add_argument(
+            "--provider",
+            default=None,
+            help="Provider name from providers.json (default: providers.json default_provider)",
+        )
+        p.add_argument(
+            "--model",
+            default=None,
+            help="Model name for the chosen provider (default: providers.json default_model)",
+        )
+        p.add_argument(
+            "--llm-base",
+            default=None,
+            help="Override LLM base URL (bypasses providers.json)",
+        )
+        p.add_argument(
+            "--api-key", default=None, help="Override API key (bypasses providers.json)"
+        )
+        p.add_argument("--max-turns", type=int, default=10, help="Max tool-call rounds")
+        p.add_argument(
+            "--resume-session", type=int, help="Resume an existing session by ID"
+        )
+        p.add_argument(
+            "--continue",
+            dest="continue_flag",
+            action="store_true",
+            help="Resume the latest active session",
+        )
+        p.add_argument(
+            "--session-name", default="Default Session", help="Name for the session"
+        )
+        p.add_argument(
+            "--permission-mode",
+            choices=("allow", "deny", "ask"),
+            default=None,
+            help="Tool permission mode (default: allow for run, ask for chat)",
+        )
+        p.add_argument(
+            "--yes",
+            action="store_true",
+            help="Auto-approve all tool calls (alias for --permission-mode allow)",
+        )
+
     # --- run subcommand (default) ---
     run_parser = subparsers.add_parser("run", help="Run an agent")
-    run_parser.add_argument(
-        "--agent", default="default", help="Select which agent to run"
-    )
-    run_parser.add_argument(
-        "--files-base-dir",
-        default=None,
-        help="Optional base directory for file tools (default /workspace)",
-    )
+    add_common_agent_args(run_parser)
     run_parser.add_argument(
         "--query", default="", help="The question or task for the agent"
     )
@@ -186,43 +271,19 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional line range to include from --include, e.g. 10-20 or 20",
     )
     run_parser.add_argument(
-        "--provider",
-        default=None,
-        help="Provider name from providers.json (default: providers.json default_provider)",
-    )
-    run_parser.add_argument(
-        "--model",
-        default=None,
-        help="Model name for the chosen provider (default: providers.json default_model)",
-    )
-    run_parser.add_argument(
-        "--llm-base",
-        default=None,
-        help="Override LLM base URL (bypasses providers.json)",
-    )
-    run_parser.add_argument(
-        "--api-key", default=None, help="Override API key (bypasses providers.json)"
-    )
-    run_parser.add_argument(
-        "--max-turns", type=int, default=10, help="Max tool-call rounds"
-    )
-    run_parser.add_argument(
-        "--resume-session", type=int, help="Resume an existing session by ID"
-    )
-    run_parser.add_argument(
-        "--continue",
-        dest="continue_flag",
+        "--interactive",
         action="store_true",
-        help="Resume the latest active session",
-    )
-    run_parser.add_argument(
-        "--session-name", default="Default Session", help="Name for the session"
+        help="Launch the interactive REPL instead of a one-shot run",
     )
     run_parser.add_argument(
         "--list-providers",
         action="store_true",
         help="List configured providers and models, then exit",
     )
+
+    # --- chat subcommand (interactive REPL) ---
+    chat_parser = subparsers.add_parser("chat", help="Start an interactive REPL")
+    add_common_agent_args(chat_parser)
 
     # --- session subcommand ---
     session_parser = subparsers.add_parser("session", help="Manage sessions")
@@ -281,7 +342,7 @@ def main():
 
     # Backward compatibility: if no subcommand is given and --agent is used,
     # default to 'run' subcommand
-    if len(sys.argv) > 1 and sys.argv[1] in ("run", "session"):
+    if len(sys.argv) > 1 and sys.argv[1] in ("run", "session", "chat"):
         args = parser.parse_args()
     else:
         # Default to 'run' subcommand
@@ -292,6 +353,10 @@ def main():
         do_run(args)
     elif args.command == "session":
         do_session(args)
+    elif args.command == "chat":
+        exit_code = do_chat(args)
+        if exit_code:
+            sys.exit(exit_code)
     else:
         parser.print_help()
 

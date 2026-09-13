@@ -1,10 +1,65 @@
 import json
 import logging
-from typing import Optional
+from typing import Protocol
 import requests
 from .http_utils import get_request_session
 
 logger = logging.getLogger("basic_agents")
+
+
+class StreamSink(Protocol):
+    """Receives streamed model output so callers can control rendering.
+
+    ``llm_client`` never prints directly when a sink is supplied. The default
+    (:class:`PrintSink`) reproduces the original one-shot output; the REPL
+    injects its own sink (see :mod:`cli.sink`) for clean turn separation.
+    """
+
+    def start(self) -> None:
+        """Called once before the first chunk of a stream."""
+
+    def reasoning(self, text: str) -> None:
+        """A reasoning/thinking delta."""
+
+    def content(self, text: str) -> None:
+        """A visible content delta."""
+
+    def end(self) -> None:
+        """Called once after the last chunk of a stream."""
+
+
+class PrintSink:
+    """Default sink: writes the stream to stdout exactly as before.
+
+    The framing (leading newline, ``[Think]`` prefix, blank line between
+    reasoning and content, trailing newline) is preserved so one-shot ``run``
+    output is unchanged. State resets on :meth:`start`, so a single instance can
+    serve many turns (the REPL case).
+    """
+
+    def __init__(self):
+        self._reasoning_started = False
+        self._content_started = False
+
+    def start(self) -> None:
+        self._reasoning_started = False
+        self._content_started = False
+        print("\n", end="", flush=True)
+
+    def reasoning(self, text: str) -> None:
+        if not self._reasoning_started:
+            print("[Think] ", end="", flush=True)
+            self._reasoning_started = True
+        print(text, end="", flush=True)
+
+    def content(self, text: str) -> None:
+        if self._reasoning_started and not self._content_started:
+            print()
+        self._content_started = True
+        print(text, end="", flush=True)
+
+    def end(self) -> None:
+        print()
 
 
 class ModelAdapter:
@@ -19,13 +74,14 @@ class ModelAdapter:
     def extract_tool_calls(self, message: dict) -> list:
         return message.get("tool_calls") or []
 
-    def stream_and_collect(self, response: requests.Response) -> dict:
+    def stream_and_collect(self, response: requests.Response, sink=None) -> dict:
         collected_content = []
         collected_reasoning = []
         tool_calls_acc: dict[int, dict] = {}
         role = "assistant"
 
-        print("\n", end="", flush=True)
+        sink = sink or PrintSink()
+        sink.start()
 
         for raw_line in response.iter_lines():
             if not raw_line:
@@ -49,17 +105,13 @@ class ModelAdapter:
 
             reasoning_delta = self._reasoning_delta(delta)
             if reasoning_delta:
-                if not collected_reasoning:
-                    print("[Think] ", end="", flush=True)
                 collected_reasoning.append(reasoning_delta)
-                print(reasoning_delta, end="", flush=True)
+                sink.reasoning(reasoning_delta)
 
             content_delta = delta.get("content") or ""
             if content_delta:
-                if collected_reasoning and not collected_content:
-                    print()
                 collected_content.append(content_delta)
-                print(content_delta, end="", flush=True)
+                sink.content(content_delta)
 
             for tc_delta in delta.get("tool_calls") or []:
                 idx = tc_delta.get("index", 0)
@@ -78,7 +130,7 @@ class ModelAdapter:
                 if fn.get("arguments"):
                     acc["function"]["arguments"] += fn["arguments"]
 
-        print()
+        sink.end()
 
         message = {"role": role, "content": "".join(collected_content)}
         if collected_reasoning:
@@ -106,7 +158,9 @@ class DeepSeekAdapter(ModelAdapter):
     def _reasoning_delta(self, delta: dict) -> str:
         return delta.get("reasoning_content") or ""
 
-    def build_assistant_message(self, content: str, reasoning: str, tool_calls: list) -> dict:
+    def build_assistant_message(
+        self, content: str, reasoning: str, tool_calls: list
+    ) -> dict:
         msg = {"role": "assistant", "content": content}
         if reasoning:
             msg["reasoning_content"] = reasoning
@@ -130,9 +184,16 @@ def get_adapter(model_name: str) -> ModelAdapter:
     return ModelAdapter()
 
 
-def call_llm_streaming(messages: list, model: str, llm_base: str, api_key: str,
-                       adapter: ModelAdapter, use_tools: bool = True,
-                       tools: list | None = None) -> dict:
+def call_llm_streaming(
+    messages: list,
+    model: str,
+    llm_base: str,
+    api_key: str,
+    adapter: ModelAdapter,
+    use_tools: bool = True,
+    tools: list | None = None,
+    sink: StreamSink | None = None,
+) -> dict:
     payload = {
         "model": model,
         "messages": messages,
@@ -166,4 +227,4 @@ def call_llm_streaming(messages: list, model: str, llm_base: str, api_key: str,
     if not response.ok:
         logger.error("Raw response body: %s", response.text)
     response.raise_for_status()
-    return adapter.stream_and_collect(response)
+    return adapter.stream_and_collect(response, sink)
