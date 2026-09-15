@@ -85,22 +85,25 @@ def resolve_provider(
             f"Provider '{provider_name}' not found. Available: {available}"
         )
 
-    model_name = model or default_model
-    if not model_name:
-        # Fall back to the first model the provider exposes.
-        models = selected.get("models", [])
-        if not models:
-            raise ProviderError(
-                f"Provider '{provider_name}' has no models configured"
-            )
-        model_name = models[0]
+    models = selected.get("models", [])
+    if not models:
+        raise ProviderError(f"Provider '{provider_name}' has no models configured")
 
-    if model_name not in selected.get("models", []):
-        available = ", ".join(selected.get("models", []))
-        raise ProviderError(
-            f"Model '{model_name}' not available for provider "
-            f"'{provider_name}'. Available: {available}"
-        )
+    if model:
+        # Explicit model: validate strictly so typos are surfaced.
+        if model not in models:
+            available = ", ".join(models)
+            raise ProviderError(
+                f"Model '{model}' not available for provider "
+                f"'{provider_name}'. Available: {available}"
+            )
+        model_name = model
+    elif default_model and default_model in models:
+        model_name = default_model
+    else:
+        # No explicit model and the global default does not belong to this
+        # provider: fall back to the first model it exposes.
+        model_name = models[0]
 
     return ProviderConfig(
         name=selected["name"],

@@ -114,12 +114,19 @@ class Repl:
         session is already bound, so we rebind directly instead of letting the
         first ``run()`` re-resolve it via ``init_session_db``.
         """
-        from main import get_agent_class, resolve_llm_config
+        from main import get_agent_class
+        from utils.provider_config import resolve_provider
 
         agent_cls = get_agent_class(self.agent_name)
-        llm_base, api_key, model = resolve_llm_config(
-            self.provider, self.model, self.args.llm_base, self.args.api_key
-        )
+        # Chat mode is provider-driven: base URL, API key and model all come
+        # from providers.json for the selected provider. The ``--llm-base`` /
+        # ``--api-key`` overrides are a one-shot ``run`` escape hatch and are
+        # deliberately ignored here so a ``/provider`` switch always picks up
+        # that provider's own credentials.
+        provider_cfg = resolve_provider(self.provider, self.model)
+        llm_base = provider_cfg.api_base_url
+        api_key = provider_cfg.api_key
+        model = provider_cfg.model
         agent = agent_cls(
             model=model,
             llm_base=llm_base,
@@ -215,6 +222,9 @@ class Repl:
             )
             return
         self.provider = arg
+        # Models are provider-specific, so drop the current one and let the new
+        # provider's default (with its own API key/base) be resolved.
+        self.model = None
         self._reinstantiate()
         self._output(f"[REPL] Now using provider '{self.provider}'.")
 

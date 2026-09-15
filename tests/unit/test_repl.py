@@ -65,13 +65,17 @@ def _fake_agent_cls(created):
 
 
 def _wire(monkeypatch, created):
+    from utils.provider_config import ProviderConfig
+
     monkeypatch.setattr("main.get_agent_class", lambda name: _fake_agent_cls(created))
+    # Chat mode resolves everything from providers.json; mirror that contract.
     monkeypatch.setattr(
-        "main.resolve_llm_config",
-        lambda provider, model, llm_base, api_key: (
-            llm_base or "http://base",
-            api_key or "key",
-            model or "model",
+        "utils.provider_config.resolve_provider",
+        lambda provider, model: ProviderConfig(
+            name=provider or "default",
+            api_base_url="http://base",
+            api_key="key",
+            model=model or "model",
         ),
     )
 
@@ -182,6 +186,44 @@ class TestReplMetaCommands:
         assert repl.model == "other-model"
         # The original agent is not shut down by the switch.
         assert created[0].shutdown_calls == 0
+
+    def test_provider_switch_reloads_provider_credentials(self, monkeypatch):
+        from utils.provider_config import ProviderConfig
+
+        created, out, seen = [], [], []
+
+        def fake_resolve(provider, model):
+            seen.append((provider, model))
+            name = provider or "default"
+            return ProviderConfig(
+                name=name,
+                api_base_url=f"http://{name}",
+                api_key=f"key-{name}",
+                model=model or f"model-{name}",
+            )
+
+        # CLI --llm-base/--api-key must be ignored in chat mode.
+        repl = _repl(
+            ["/provider deepseek", "/quit"],
+            created,
+            monkeypatch,
+            out,
+            llm_base="http://stale",
+            api_key="stale-key",
+        )
+        monkeypatch.setattr("utils.provider_config.resolve_provider", fake_resolve)
+
+        repl.run()
+
+        assert len(created) == 2
+        # The initial agent uses the default provider, not the CLI overrides.
+        assert created[0].kwargs["llm_base"] == "http://default"
+        assert created[0].kwargs["api_key"] == "key-default"
+        # After /provider the credentials are reloaded for the new provider.
+        assert created[1].kwargs["llm_base"] == "http://deepseek"
+        assert created[1].kwargs["api_key"] == "key-deepseek"
+        # The switch also re-resolves the model for that provider.
+        assert seen[-1] == ("deepseek", None)
 
     def test_unknown_command_is_reported(self, monkeypatch):
         created, out = [], []
