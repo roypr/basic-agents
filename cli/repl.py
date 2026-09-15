@@ -23,7 +23,18 @@ Commands:
   /agents [name]     List agents, or switch to <name>
   /provider [name]   Show or switch the provider
   /model [name]      Show or switch the model
-Anything else is sent to the agent as a prompt."""
+Anything else is sent to the agent as a prompt.
+
+Startup options (pass when launching chat):
+  --include <path>   Attach a file's contents to the first turn
+  --lines <range>    Limit --include to a range, e.g. 10-20 or 20
+  --image <path>     Attach an image to the first turn
+  --provider <name>  Start with a specific provider
+  --model <name>     Start with a specific model
+  --agent <name>     Start with a specific agent
+  --resume-session <id>, --continue   Resume an existing session
+Attachments apply to the first turn only; later turns keep the context
+from the session history."""
 
 
 class Repl:
@@ -50,11 +61,17 @@ class Repl:
         # Frames streamed model output so REPL turns stay visually distinct.
         self._sink = ReplSink()
         self._shutdown_done = False
+        # One-shot attachments (--include/--lines/--image) ride along with the
+        # first turn; later turns rely on the persisted session history.
+        self._include_block = None
+        self._image_data = None
+        self._attachments_pending = True
 
     # ------------------------------------------------------------------ loop
 
     def run(self) -> int:
         try:
+            self._prepare_attachments()
             self._instantiate()
         except Exception as exc:  # startup failure — nothing to shut down
             self._output(f"[REPL] Could not start: {exc}")
@@ -84,9 +101,45 @@ class Repl:
             self.shutdown()
         return 0
 
+    def _prepare_attachments(self) -> None:
+        """Resolve --include/--lines/--image into the first-turn payload.
+
+        Mirrors the one-shot ``run`` path so the same flags behave identically
+        when the REPL is started via ``chat`` (or ``run --interactive``).
+        """
+        from utils.file_utils import build_query, encode_image_base64, parse_line_range
+
+        include = getattr(self.args, "include", None)
+        lines = getattr(self.args, "lines", None)
+        image = getattr(self.args, "image", None)
+
+        if lines and not include:
+            raise ValueError("--lines can only be used together with --include")
+
+        line_range = parse_line_range(lines) if lines else None
+        if include:
+            # build_query with an empty query returns just the include block;
+            # it is appended to the first prompt typed in the REPL.
+            self._include_block = build_query("", include, line_range)
+
+        if image:
+            mime, b64 = encode_image_base64(image)
+            self._image_data = {"mime": mime, "data": b64}
+            self._output(f"[Image] Loaded {image} ({mime}, {len(b64)} base64 chars)")
+
+    def _consume_attachments(self, query: str) -> tuple[str, dict | None]:
+        """Attach the one-shot include/image payload to the first turn only."""
+        if not self._attachments_pending:
+            return query, None
+        self._attachments_pending = False
+        if self._include_block:
+            query = f"{query}\n\n{self._include_block}"
+        return query, self._image_data
+
     def _run_turn(self, query: str) -> None:
+        query, image_data = self._consume_attachments(query)
         try:
-            self.agent.run(query)
+            self.agent.run(query, image_data=image_data)
         except KeyboardInterrupt:
             # Per-turn interrupt: return to the prompt, session stays resumable.
             self._output("\n[REPL] Turn interrupted. Session is resumable.")

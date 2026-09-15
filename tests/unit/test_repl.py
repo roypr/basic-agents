@@ -31,6 +31,9 @@ def _args(**overrides):
         session_name="Test Session",
         permission_mode=None,
         yes=False,
+        include=None,
+        lines=None,
+        image=None,
     )
     values.update(overrides)
     return argparse.Namespace(**values)
@@ -47,11 +50,13 @@ def _fake_agent_cls(created):
                 rule_store=object(), resolver=object()
             )
             self.run_calls = []
+            self.image_calls = []
             self.shutdown_calls = 0
             created.append(self)
 
         def run(self, query, image_data=None):
             self.run_calls.append(query)
+            self.image_calls.append(image_data)
             if query == "interrupt":
                 raise KeyboardInterrupt
             if query == "boom":
@@ -80,12 +85,12 @@ def _wire(monkeypatch, created):
     )
 
 
-def _repl(lines, created, monkeypatch, out, **arg_overrides):
+def _repl(script, created, monkeypatch, out, **arg_overrides):
     _wire(monkeypatch, created)
     return Repl(
         _args(**arg_overrides),
         permission_mode="allow",
-        input_fn=_ScriptedInput(lines),
+        input_fn=_ScriptedInput(script),
         output_fn=out.append,
     )
 
@@ -152,6 +157,16 @@ class TestReplMetaCommands:
         joined = "\n".join(out)
         for cmd in ("/quit", "/new", "/session", "/agents", "/provider", "/model"):
             assert cmd in joined
+
+    def test_help_lists_startup_options(self, monkeypatch):
+        created, out = [], []
+        repl = _repl(["/help", "/quit"], created, monkeypatch, out)
+
+        repl.run()
+
+        joined = "\n".join(out)
+        for flag in ("--include", "--lines", "--image"):
+            assert flag in joined
 
     def test_session_command_is_read_only(self, monkeypatch):
         created, out = [], []
@@ -295,3 +310,115 @@ class TestReplStartup:
         repl.run()
 
         assert isinstance(created[0].kwargs["permission_resolver"], AutoDenyResolver)
+
+
+@pytest.mark.unit
+class TestReplAttachments:
+    def test_include_attached_to_first_turn_only(self, monkeypatch, tmp_path):
+        src = tmp_path / "notes.txt"
+        src.write_text("line one\nline two\nline three\n", encoding="utf-8")
+
+        created, out = [], []
+        repl = _repl(
+            ["what is this?", "and now?", "/quit"],
+            created,
+            monkeypatch,
+            out,
+            include=str(src),
+            lines="2-3",
+        )
+
+        repl.run()
+
+        first, second = repl.agent.run_calls
+        assert "Included file content from" in first
+        assert "line two" in first and "line three" in first
+        assert "line one" not in first  # --lines narrowed the range
+        # The attachment is one-shot: the follow-up turn is the raw prompt.
+        assert second == "and now?"
+
+    def test_whole_file_included_when_lines_omitted(self, monkeypatch, tmp_path):
+        src = tmp_path / "notes.txt"
+        src.write_text("alpha\nbeta\n", encoding="utf-8")
+
+        created, out = [], []
+        repl = _repl(["hi", "/quit"], created, monkeypatch, out, include=str(src))
+
+        repl.run()
+
+        assert "Whole file" in repl.agent.run_calls[0]
+        assert "alpha" in repl.agent.run_calls[0]
+
+    def test_image_forwarded_to_first_turn(self, monkeypatch, tmp_path):
+        img = tmp_path / "pic.png"
+        img.write_bytes(b"\x89PNG\r\n\x1a\nfake")
+
+        created, out = [], []
+        repl = _repl(
+            ["look", "again", "/quit"],
+            created,
+            monkeypatch,
+            out,
+            image=str(img),
+        )
+
+        repl.run()
+
+        first_image = repl.agent.image_calls[0]
+        assert first_image["mime"] == "image/png"
+        assert first_image["data"]
+        # Subsequent turns carry no image.
+        assert repl.agent.image_calls[1] is None
+
+    def test_no_attachments_passes_none(self, monkeypatch):
+        created, out = [], []
+        repl = _repl(["hi", "/quit"], created, monkeypatch, out)
+
+        repl.run()
+
+        assert repl.agent.run_calls == ["hi"]
+        assert repl.agent.image_calls == [None]
+
+    def test_lines_without_include_is_startup_error(self, monkeypatch):
+        created, out = [], []
+        repl = _repl(["/quit"], created, monkeypatch, out, lines="1-2")
+
+        rc = repl.run()
+
+        assert rc == 1
+        assert any("--lines" in line and "Could not start" in line for line in out)
+        assert created == []
+
+    def test_missing_include_file_is_startup_error(self, monkeypatch, tmp_path):
+        created, out = [], []
+        repl = _repl(
+            ["/quit"],
+            created,
+            monkeypatch,
+            out,
+            include=str(tmp_path / "nope.txt"),
+        )
+
+        rc = repl.run()
+
+        assert rc == 1
+        assert any("Could not start" in line for line in out)
+        assert created == []
+
+    def test_meta_command_does_not_consume_attachment(self, monkeypatch, tmp_path):
+        src = tmp_path / "notes.txt"
+        src.write_text("payload\n", encoding="utf-8")
+
+        created, out = [], []
+        repl = _repl(
+            ["/session", "real question", "/quit"],
+            created,
+            monkeypatch,
+            out,
+            include=str(src),
+        )
+
+        repl.run()
+
+        # /session is not a turn, so the file still rides on the first prompt.
+        assert repl.agent.run_calls == ["real question\n\n" + repl._include_block]

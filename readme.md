@@ -22,10 +22,11 @@ basic-agents/
 │       ├── system_prompt.txt # Agent-specific system prompt
 │       └── tools.py          # Agent-specific tools
 ├── core/                # Base agent class, tool registry, and shared loop logic
+├── cli/                 # Interactive REPL, permission prompts, stream sink
 ├── db/                  # SQLite session persistence (session_db.py)
 ├── utils/               # File helpers, LLM client, session manager, tool executor
 ├── tests/               # pytest test suite
-├── main.py              # CLI entry point with run + session subcommands
+├── main.py              # CLI entry point with run + chat + session subcommands
 ├── config.py            # Global config (FILES_BASE_DIR)
 ├── providers.json       # Provider/model config (not committed — copy providers.example.json)
 ├── providers.example.json # Template for providers.json
@@ -48,7 +49,7 @@ pip install -r requirements-dev.txt
 
 ## Usage
 
-The CLI uses subcommands. The two main commands are `run` (to execute an agent) and `session` (to manage sessions).
+The CLI uses subcommands. The main commands are `run` (to execute an agent once), `chat` (for an interactive REPL), and `session` (to manage sessions).
 
 ### Running an Agent
 
@@ -136,12 +137,14 @@ Sessions persist the full conversation history, so the agent picks up with compl
 | `--files-base-dir` | `/workspace` | Base directory exposed to file tools |
 | `--include` | — | Path to a file whose contents are appended to the query |
 | `--lines` | — | Line range from `--include`, e.g. `10-20` or `20` |
+| `--image` | — | Path to an image to send with the query |
 | `--resume-session` | — | Resume an existing session by ID |
 | `--continue` | — | Resume the latest active session (mutually exclusive with `--resume-session`) |
 | `--session-name` | `Default Session` | Name for a new session |
 | `--list-providers` | — | List configured providers and models, then exit |
+| `--interactive` | — | Launch the interactive REPL instead of a one-shot run |
 
-### Including File Context
+### Attaching File and Image Context
 
 You can inline a file (or a slice of it) into your query:
 
@@ -153,6 +156,50 @@ python main.py run --agent default --query "Explain this code" --include ./myfil
 python main.py run --agent default --query "What does this function do?" \
   --include ./myfile.py --lines 10-40
 ```
+
+To send an image alongside your query, use `--image`:
+
+```bash
+python main.py run --agent default --query "What does this screenshot show?" \
+  --image ./screenshot.png
+```
+
+`--lines` requires `--include`. Both `--include` and `--image` also work in the interactive REPL — see [Interactive Mode](#interactive-mode-chat).
+
+## Interactive Mode (`chat`)
+
+The `chat` subcommand starts a persistent REPL that keeps a single agent and session alive across turns:
+
+```bash
+python main.py chat --agent default --provider deepseek --model deepseek-flash
+```
+
+`run --interactive` launches the same REPL.
+
+### REPL Commands
+
+| Command | Description |
+|---|---|
+| `/help` | Show the command list and startup options |
+| `/quit`, `/exit` | Shut down and exit |
+| `/new` | Start a fresh session on the next turn |
+| `/session` | Show the bound session ID and name |
+| `/agents [name]` | List agents, or switch to `<name>` |
+| `/provider [name]` | Show or switch the provider |
+| `/model [name]` | Show or switch the model |
+
+Anything that is not a `/` command is sent to the agent as a prompt. Switching the provider or model mid-session re-instantiates the agent but keeps the current session bound, so the conversation continues without losing context.
+
+### Attaching Context at Startup
+
+The REPL accepts the same attachment flags as `run`. They apply to the **first turn only** — later turns rely on the session history, which already contains the attached content:
+
+```bash
+python main.py chat --include ./myfile.py --lines 10-40
+python main.py chat --image ./screenshot.png
+```
+
+Because the REPL is provider-driven, `--llm-base` and `--api-key` are ignored in chat mode. Base URL and API key always come from the provider selected in `providers.json` (via `--provider`, `/provider`, or the configured default).
 
 ## Session Management
 

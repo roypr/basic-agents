@@ -284,6 +284,19 @@ def build_parser() -> argparse.ArgumentParser:
     # --- chat subcommand (interactive REPL) ---
     chat_parser = subparsers.add_parser("chat", help="Start an interactive REPL")
     add_common_agent_args(chat_parser)
+    chat_parser.add_argument(
+        "--include",
+        default=None,
+        help="Optional file path to attach to the first turn",
+    )
+    chat_parser.add_argument(
+        "--image", default=None, help="Optional image to attach to the first turn"
+    )
+    chat_parser.add_argument(
+        "--lines",
+        default=None,
+        help="Optional line range to include from --include, e.g. 10-20 or 20",
+    )
 
     # --- session subcommand ---
     session_parser = subparsers.add_parser("session", help="Manage sessions")
