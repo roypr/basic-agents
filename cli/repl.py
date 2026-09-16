@@ -23,6 +23,8 @@ Commands:
   /agents [name]     List agents, or switch to <name>
   /provider [name]   Show or switch the provider
   /model [name]      Show or switch the model
+  /image <path>      Attach an image to the next turn
+  /file <path> [lines]  Attach a file's contents to the next turn
 Anything else is sent to the agent as a prompt.
 
 Startup options (pass when launching chat):
@@ -33,8 +35,9 @@ Startup options (pass when launching chat):
   --model <name>     Start with a specific model
   --agent <name>     Start with a specific agent
   --resume-session <id>, --continue   Resume an existing session
-Attachments apply to the first turn only; later turns keep the context
-from the session history."""
+
+--include/--lines/--image apply to the first turn only. /image and /file
+queue attachments for the next turn. Later turns rely on session history."""
 
 
 class Repl:
@@ -66,6 +69,10 @@ class Repl:
         self._include_block = None
         self._image_data = None
         self._attachments_pending = True
+        # Attachments queued mid-session via /file and /image. They are one-shot
+        # too: the next turn consumes them, then they are cleared.
+        self._queued_includes: list[str] = []
+        self._queued_image: dict | None = None
 
     # ------------------------------------------------------------------ loop
 
@@ -128,13 +135,26 @@ class Repl:
             self._output(f"[Image] Loaded {image} ({mime}, {len(b64)} base64 chars)")
 
     def _consume_attachments(self, query: str) -> tuple[str, dict | None]:
-        """Attach the one-shot include/image payload to the first turn only."""
-        if not self._attachments_pending:
-            return query, None
-        self._attachments_pending = False
-        if self._include_block:
-            query = f"{query}\n\n{self._include_block}"
-        return query, self._image_data
+        """Attach any pending include/image payload to this turn.
+
+        Startup attachments (--include/--lines/--image) ride the first turn;
+        attachments queued with /file and /image ride the next turn. Both are
+        one-shot: once consumed they are cleared so later turns stay text-only.
+        """
+        image_data = None
+        if self._attachments_pending:
+            self._attachments_pending = False
+            if self._include_block:
+                query = f"{query}\n\n{self._include_block}"
+            image_data = self._image_data
+
+        if self._queued_includes:
+            query = f"{query}\n\n" + "\n\n".join(self._queued_includes)
+            self._queued_includes = []
+        if self._queued_image is not None:
+            image_data = self._queued_image
+            self._queued_image = None
+        return query, image_data
 
     def _run_turn(self, query: str) -> None:
         query, image_data = self._consume_attachments(query)
@@ -212,9 +232,12 @@ class Repl:
     # ---------------------------------------------------------- meta-commands
 
     def _handle_command(self, line: str):
-        parts = line.split()
-        cmd = parts[0].lower()
-        arg = parts[1] if len(parts) > 1 else None
+        tokens = line.split(maxsplit=1)
+        cmd = tokens[0].lower()
+        # `rest` keeps the whole argument string (paths may contain spaces);
+        # `arg` is the first token, which is what the switch commands expect.
+        rest = tokens[1].strip() if len(tokens) > 1 else None
+        arg = rest.split()[0] if rest else None
 
         if cmd in ("/quit", "/exit"):
             return "quit"
@@ -230,9 +253,66 @@ class Repl:
             self._handle_provider(arg)
         elif cmd == "/model":
             self._handle_model(arg)
+        elif cmd == "/image":
+            self._handle_image(rest)
+        elif cmd == "/file":
+            self._handle_file(rest)
         else:
             self._output(f"[REPL] Unknown command: {cmd}. Type /help.")
         return None
+
+    def _handle_image(self, rest: str | None) -> None:
+        """Queue an image (--image equivalent) for the next turn."""
+        if not rest:
+            self._output("[REPL] Usage: /image <path>")
+            return
+
+        from utils.file_utils import encode_image_base64
+
+        try:
+            mime, b64 = encode_image_base64(rest)
+        except (FileNotFoundError, ValueError, OSError) as exc:
+            self._output(f"[REPL] Could not attach image: {exc}")
+            return
+        self._queued_image = {"mime": mime, "data": b64}
+        self._output(f"[REPL] Image queued for the next turn: {rest} ({mime})")
+
+    def _handle_file(self, rest: str | None) -> None:
+        """Queue a file include (--include/--lines equivalent) for the next turn."""
+        if not rest:
+            self._output("[REPL] Usage: /file <path> [start-end]")
+            return
+
+        from utils.file_utils import build_query
+
+        path, line_range = self._split_path_and_range(rest)
+        try:
+            block = build_query("", path, line_range)
+        except (FileNotFoundError, ValueError, OSError) as exc:
+            self._output(f"[REPL] Could not attach file: {exc}")
+            return
+        self._queued_includes.append(block)
+        label = f"lines {line_range[0]}-{line_range[1]}" if line_range else "whole file"
+        self._output(f"[REPL] File queued for the next turn: {path} ({label})")
+
+    @staticmethod
+    def _split_path_and_range(rest: str) -> tuple[str, tuple[int, int] | None]:
+        """Split ``<path> [start-end]`` into a path and an optional line range.
+
+        A trailing token is treated as a range only when it parses as one, so
+        paths containing spaces still work when no range is given.
+        """
+        from utils.file_utils import parse_line_range
+
+        tokens = rest.split()
+        if len(tokens) > 1:
+            try:
+                line_range = parse_line_range(tokens[-1])
+            except ValueError:
+                line_range = None
+            if line_range is not None:
+                return " ".join(tokens[:-1]), line_range
+        return rest, None
 
     def _start_new_session(self) -> None:
         self.agent.session_id = None

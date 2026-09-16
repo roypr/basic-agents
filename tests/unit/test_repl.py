@@ -155,7 +155,16 @@ class TestReplMetaCommands:
         repl.run()
 
         joined = "\n".join(out)
-        for cmd in ("/quit", "/new", "/session", "/agents", "/provider", "/model"):
+        for cmd in (
+            "/quit",
+            "/new",
+            "/session",
+            "/agents",
+            "/provider",
+            "/model",
+            "/image",
+            "/file",
+        ):
             assert cmd in joined
 
     def test_help_lists_startup_options(self, monkeypatch):
@@ -378,6 +387,128 @@ class TestReplAttachments:
 
         assert repl.agent.run_calls == ["hi"]
         assert repl.agent.image_calls == [None]
+
+
+@pytest.mark.unit
+class TestReplAttachmentCommands:
+    def test_image_command_attaches_to_next_turn_only(self, monkeypatch, tmp_path):
+        img = tmp_path / "pic.png"
+        img.write_bytes(b"\x89PNG\r\n\x1a\nfake")
+
+        created, out = [], []
+        repl = _repl(
+            [f"/image {img}", "look", "again", "/quit"], created, monkeypatch, out
+        )
+
+        repl.run()
+
+        assert repl.agent.run_calls == ["look", "again"]
+        # The queued image rides the next turn...
+        assert repl.agent.image_calls[0]["mime"] == "image/png"
+        # ...and is one-shot.
+        assert repl.agent.image_calls[1] is None
+        assert any("queued for the next turn" in line for line in out)
+
+    def test_file_command_appends_include_block_to_next_turn(
+        self, monkeypatch, tmp_path
+    ):
+        src = tmp_path / "notes.txt"
+        src.write_text("line one\nline two\nline three\n", encoding="utf-8")
+
+        created, out = [], []
+        repl = _repl(
+            [f"/file {src}", "what is this?", "and now?", "/quit"],
+            created,
+            monkeypatch,
+            out,
+        )
+
+        repl.run()
+
+        first, second = repl.agent.run_calls
+        assert "Included file content from" in first
+        assert "line one" in first
+        # One-shot: the follow-up turn is the raw prompt.
+        assert second == "and now?"
+
+    def test_file_command_honours_line_range(self, monkeypatch, tmp_path):
+        src = tmp_path / "notes.txt"
+        src.write_text("line one\nline two\nline three\n", encoding="utf-8")
+
+        created, out = [], []
+        repl = _repl([f"/file {src} 2-3", "hi", "/quit"], created, monkeypatch, out)
+
+        repl.run()
+
+        first = repl.agent.run_calls[0]
+        assert "Lines 2-3" in first
+        assert "line two" in first and "line three" in first
+        assert "line one" not in first
+
+    def test_file_command_whole_file_when_range_omitted(self, monkeypatch, tmp_path):
+        src = tmp_path / "notes.txt"
+        src.write_text("alpha\nbeta\n", encoding="utf-8")
+
+        created, out = [], []
+        repl = _repl([f"/file {src}", "hi", "/quit"], created, monkeypatch, out)
+
+        repl.run()
+
+        assert "Whole file" in repl.agent.run_calls[0]
+
+    def test_multiple_file_commands_queue_together(self, monkeypatch, tmp_path):
+        a = tmp_path / "a.txt"
+        b = tmp_path / "b.txt"
+        a.write_text("alpha\n", encoding="utf-8")
+        b.write_text("bravo\n", encoding="utf-8")
+
+        created, out = [], []
+        repl = _repl(
+            [f"/file {a}", f"/file {b}", "hi", "/quit"], created, monkeypatch, out
+        )
+
+        repl.run()
+
+        first = repl.agent.run_calls[0]
+        assert "alpha" in first and "bravo" in first
+
+    def test_image_command_missing_file_reports_error(self, monkeypatch, tmp_path):
+        created, out = [], []
+        repl = _repl(
+            [f"/image {tmp_path / 'nope.png'}", "hi", "/quit"],
+            created,
+            monkeypatch,
+            out,
+        )
+
+        repl.run()
+
+        assert any("Could not attach image" in line for line in out)
+        assert repl.agent.image_calls == [None]
+
+    def test_file_command_missing_file_reports_error(self, monkeypatch, tmp_path):
+        created, out = [], []
+        repl = _repl(
+            [f"/file {tmp_path / 'nope.txt'}", "hi", "/quit"],
+            created,
+            monkeypatch,
+            out,
+        )
+
+        repl.run()
+
+        assert any("Could not attach file" in line for line in out)
+        assert repl.agent.run_calls == ["hi"]
+
+    def test_commands_without_argument_print_usage(self, monkeypatch):
+        created, out = [], []
+        repl = _repl(["/image", "/file", "/quit"], created, monkeypatch, out)
+
+        repl.run()
+
+        joined = "\n".join(out)
+        assert "Usage: /image" in joined
+        assert "Usage: /file" in joined
 
     def test_lines_without_include_is_startup_error(self, monkeypatch):
         created, out = [], []

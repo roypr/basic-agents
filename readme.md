@@ -187,6 +187,8 @@ python main.py chat --agent default --provider deepseek --model deepseek-flash
 | `/agents [name]` | List agents, or switch to `<name>` |
 | `/provider [name]` | Show or switch the provider |
 | `/model [name]` | Show or switch the model |
+| `/image <path>` | Attach an image to the next turn |
+| `/file <path> [lines]` | Attach a file's contents to the next turn |
 
 Anything that is not a `/` command is sent to the agent as a prompt. Switching the provider or model mid-session re-instantiates the agent but keeps the current session bound, so the conversation continues without losing context.
 
@@ -198,6 +200,21 @@ The REPL accepts the same attachment flags as `run`. They apply to the **first t
 python main.py chat --include ./myfile.py --lines 10-40
 python main.py chat --image ./screenshot.png
 ```
+
+### Attaching Context Mid-Session
+
+Use the `/image` and `/file` commands to attach context to the **next turn** without restarting. Like the startup flags, both are one-shot — the attachment rides the next prompt and is then cleared:
+
+```
+[default:new session] > /file ./myfile.py 10-40
+[REPL] File queued for the next turn: ./myfile.py (lines 10-40)
+[default:new session] > /image ./screenshot.png
+[REPL] Image queued for the next turn: ./screenshot.png (image/png)
+[default:new session] > summarise this file and describe the screenshot
+```
+
+`/file` accepts an optional trailing line range (`10-40` or `20`); omit it to attach the whole file. Multiple `/file` commands queue together. `/image` sends a single image, so a later `/image` replaces any image still queued.
+
 
 Because the REPL is provider-driven, `--llm-base` and `--api-key` are ignored in chat mode. Base URL and API key always come from the provider selected in `providers.json` (via `--provider`, `/provider`, or the configured default).
 
