@@ -143,11 +143,19 @@ class BaseAgent:
 
     @staticmethod
     def _parse_tool_args(tc: dict) -> dict:
-        """Parse a tool call's arguments, mirroring the executor's parsing."""
+        """Parse a tool call's arguments, mirroring the executor's parsing.
+
+        ``strict=False`` tolerates raw control characters (e.g. a literal tab)
+        that local models sometimes emit inside JSON string values instead of
+        the escaped \t sequence; this keeps the gate's view of the args in sync
+        with what the executor will actually receive.
+        """
         raw_args = tc.get("function", {}).get("arguments")
         try:
             return (
-                json.loads(raw_args) if isinstance(raw_args, str) else (raw_args or {})
+                json.loads(raw_args, strict=False)
+                if isinstance(raw_args, str)
+                else (raw_args or {})
             )
         except json.JSONDecodeError:
             return {}

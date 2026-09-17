@@ -37,7 +37,16 @@ def execute_tool_call(
     raw_args = tc["function"]["arguments"]
 
     try:
-        fn_args = json.loads(raw_args) if isinstance(raw_args, str) else raw_args
+        # strict=False tolerates raw control characters (e.g. a literal tab)
+        # that local models sometimes emit inside JSON string values instead
+        # of the escaped \t sequence. Without this, such arguments fail to
+        # parse and the tool silently runs with empty args, losing content
+        # (notably leading indentation).
+        fn_args = (
+            json.loads(raw_args, strict=False)
+            if isinstance(raw_args, str)
+            else raw_args
+        )
     except json.JSONDecodeError:
         fn_args = {}
 
