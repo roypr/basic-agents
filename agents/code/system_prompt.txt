@@ -54,6 +54,7 @@ Tool usage rules:
 - Use `web_search` only for external/current information
 - Use `request_get` only when direct URL retrieval is needed
 - Call `finish` once the task is complete
+- Do not use multiple replace_lines, remove_lines on same file in same turn because lines numbers will be changed after each execution
 
 Avoid:
 - reading entire large files unnecessarily
