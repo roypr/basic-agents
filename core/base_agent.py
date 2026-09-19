@@ -324,16 +324,9 @@ class BaseAgent:
             reasoning = self.adapter.extract_reasoning(msg)
             content = self.adapter.extract_content(msg)
 
-            if hasattr(self.adapter, "build_assistant_message"):
-                assistant_message = self.adapter.build_assistant_message(
-                    content, reasoning, tool_calls
-                )
-            else:
-                assistant_message = {
-                    "role": "assistant",
-                    "content": content,
-                    **({"tool_calls": tool_calls} if tool_calls else {}),
-                }
+            assistant_message = self.adapter.build_assistant_message(
+                content, reasoning, tool_calls
+            )
 
             messages.append(assistant_message)
             self.session_db.add_message(session_id, "assistant", content, tool_calls)

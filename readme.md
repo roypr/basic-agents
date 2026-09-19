@@ -218,6 +218,16 @@ Use the `/image` and `/file` commands to attach context to the **next turn** wit
 
 Because the REPL is provider-driven, `--llm-base` and `--api-key` are ignored in chat mode. Base URL and API key always come from the provider selected in `providers.json` (via `--provider`, `/provider`, or the configured default).
 
+### Terminal Styling
+
+The CLI output is lightly styled for readability — the banner, the input prompt, permission headers and the streamed `[Think]` marker each use a color or dim tone so turns and gates are easy to scan. This is purely cosmetic and adds no dependencies: styling lives in a tiny ANSI helper (`cli/style.py`) and colors are emitted only when the output is an interactive terminal.
+
+Redirected or piped output, logs and captured test output are always plain text, so scripting and `pytest` are unaffected. To force plain output explicitly, set the standard `NO_COLOR` environment variable (or run with `TERM=dumb`):
+
+```bash
+NO_COLOR=1 python main.py chat
+```
+
 ## Session Management
 
 Sessions store conversation history in a local SQLite database, allowing agents to resume where they left off. All session operations are available via the `session` subcommand:

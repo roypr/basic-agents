@@ -3,6 +3,7 @@ import logging
 from typing import Protocol
 import requests
 from .http_utils import get_request_session
+from cli.style import dim
 
 logger = logging.getLogger("basic_agents")
 
@@ -48,13 +49,15 @@ class PrintSink:
 
     def reasoning(self, text: str) -> None:
         if not self._reasoning_started:
-            print("[Think] ", end="", flush=True)
+            print(dim("[Think] "), end="\n", flush=True)
+            
             self._reasoning_started = True
         print(text, end="", flush=True)
 
     def content(self, text: str) -> None:
         if self._reasoning_started and not self._content_started:
-            print()
+            print(dim("\n[/Think] "), end="\n", flush=True)
+            
         self._content_started = True
         print(text, end="", flush=True)
 
@@ -73,6 +76,21 @@ class ModelAdapter:
 
     def extract_tool_calls(self, message: dict) -> list:
         return message.get("tool_calls") or []
+
+    def build_assistant_message(
+        self, content: str, reasoning: str, tool_calls: list
+    ) -> dict:
+        """Rebuild the assistant message for conversation history.
+
+        Reasoning is included so reasoning-capable models (e.g. DeepSeek)
+        can condition on their prior thinking across turns.
+        """
+        msg = {"role": "assistant", "content": content}
+        if reasoning:
+            msg["reasoning_content"] = reasoning
+        if tool_calls:
+            msg["tool_calls"] = tool_calls
+        return msg
 
     def stream_and_collect(self, response: requests.Response, sink=None) -> dict:
         collected_content = []
