@@ -44,6 +44,12 @@ class _FakeAdapter:
     def extract_content(self, msg):
         return msg.get("content")
 
+    def build_assistant_message(self, content, reasoning, tool_calls):
+        msg = {"role": "assistant", "content": content}
+        if tool_calls:
+            msg["tool_calls"] = tool_calls
+        return msg
+
 
 def _bare_agent(tool_map, policy):
     """Build an agent without running __init__ side effects (DB, adapter)."""

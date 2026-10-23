@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import sys
 
+from cli import style
 from cli.resolver import build_resolver
 from cli.sink import ReplSink
 
@@ -386,14 +387,17 @@ class Repl:
 
     def _print_banner(self) -> None:
         self._output("")
-        self._output("basic-agents REPL — /help for commands, /quit to exit.")
-        self._output(f"  agent: {self.agent_name}   model: {self.model}")
-        self._output(f"  session name: {self.args.session_name}")
+        self._output(
+            style.bold(style.cyan("basic-agents REPL"))
+            + style.dim(" — /help for commands, /quit to exit.")
+        )
+        self._output(style.dim(f"  agent: {self.agent_name}   model: {self.model}"))
+        self._output(style.dim(f"  session name: {self.args.session_name}"))
 
     def _prompt_text(self) -> str:
         session_id = self.agent.session_id if self.agent else None
         tag = f"session {session_id}" if session_id else "new session"
-        return f"[{self.agent_name}:{tag}] > "
+        return f"[{style.cyan(self.agent_name)}:{style.dim(tag)}] > "
 
 
 def run_repl(args, permission_mode: str = "ask", input_fn=None, output_fn=None) -> int:

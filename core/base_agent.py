@@ -108,6 +108,29 @@ class BaseAgent:
                 pass
         return content
 
+    @staticmethod
+    def _deserialize_tool_content(content) -> str | list:
+        """Rehydrate a multimodal tool result stored as JSON.
+
+        Tool output is frequently JSON itself (e.g. a directory listing is a
+        ``list[str]``), so deserializing every tool message would turn valid
+        text into an invalid tool-content list. Only restore arrays made of
+        content-part dicts (the shape ``_tool_content`` produces for images).
+        """
+        if not isinstance(content, str):
+            return content
+        try:
+            parsed = json.loads(content)
+        except (json.JSONDecodeError, TypeError):
+            return content
+        if (
+            isinstance(parsed, list)
+            and parsed
+            and all(isinstance(part, dict) and "type" in part for part in parsed)
+        ):
+            return parsed
+        return content
+
     def _build_user_content(self, query: str, image_data: dict | None):
         """Build user message content — string for text-only, list for multimodal."""
         if image_data is None:
@@ -267,10 +290,14 @@ class BaseAgent:
         messages = self.session_db.get_messages(session_id)
         # Heal sessions where a previous run died before producing tool results.
         messages = self._recover_orphaned_tool_calls(session_id, messages)
-        # Deserialize any multimodal content stored as JSON
+        # Deserialize multimodal content stored as JSON. User content is always
+        # a content-part list when multimodal; tool content only is when the
+        # tool attached an image (see _deserialize_tool_content).
         for msg in messages:
             if msg["role"] == "user":
                 msg["content"] = self._deserialize_content(msg["content"])
+            elif msg["role"] == "tool":
+                msg["content"] = self._deserialize_tool_content(msg["content"])
 
         if messages:
             print(
@@ -324,16 +351,9 @@ class BaseAgent:
             reasoning = self.adapter.extract_reasoning(msg)
             content = self.adapter.extract_content(msg)
 
-            if hasattr(self.adapter, "build_assistant_message"):
-                assistant_message = self.adapter.build_assistant_message(
-                    content, reasoning, tool_calls
-                )
-            else:
-                assistant_message = {
-                    "role": "assistant",
-                    "content": content,
-                    **({"tool_calls": tool_calls} if tool_calls else {}),
-                }
+            assistant_message = self.adapter.build_assistant_message(
+                content, reasoning, tool_calls
+            )
 
             messages.append(assistant_message)
             self.session_db.add_message(session_id, "assistant", content, tool_calls)

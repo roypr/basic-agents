@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 
 from core.permissions import PermissionRequest
+from cli import style
 
 # Long argument values are truncated so a single prompt stays readable.
 DEFAULT_MAX_VALUE_LEN = 120
@@ -58,7 +59,7 @@ def render_prompt(request: PermissionRequest, scope: str = "session") -> str:
     return "\n".join(
         [
             "",
-            "── Permission required ──",
+            style.bold(style.yellow("── Permission required ──")),
             f"  tool: {request.tool_name}",
             "  args:",
             format_args(request.args),
