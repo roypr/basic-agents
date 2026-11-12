@@ -5,6 +5,7 @@ from core.permissions import AutoAllowResolver, PermissionPolicy
 from core.rule_store import InMemoryRuleStore
 from utils.http_utils import close_request_session
 from utils.llm_client import call_llm_streaming, get_adapter
+from utils.logging_setup import configure_error_logging
 from utils.session_manager import init_session_db
 from utils.tool_executor import execute_tool_calls, shutdown_tool_executor
 
@@ -19,12 +20,7 @@ ORPHANED_TOOL_RESULT = (
 )
 
 
-logging.basicConfig(
-    filename="logs/app_errors.log",
-    filemode="a",  # 'a' appends data, 'w' overwrites the file each run
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    level=logging.ERROR,
-)
+configure_error_logging()
 
 
 class BaseAgent:

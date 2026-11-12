@@ -399,6 +399,29 @@ cp providers.example.json providers.json
 
 > `providers.json` contains secrets and should **not** be committed. It is already covered by `.gitignore`.
 
+## Error Handling
+
+Every provider reports failures differently (OpenAI-style `{"error": {...}}`, Anthropic's `{"type": "error", ...}`, plain-text gateway responses, HTML error pages, or an error event inside an otherwise successful stream). All of them are normalised in `utils/llm/errors.py` into one `LLMError` carrying the provider, model, HTTP status, a category (`auth`, `rate_limit`, `context_length`, `invalid_request`, `server`, `network`, …), a retryability flag and an actionable hint.
+
+The terminal shows the short form; the raw wire body goes to `logs/app_errors.log`:
+
+```
+[LLM error] openai/gpt-6-luna — invalid request (HTTP 400)
+  Function tools with reasoning_effort are not supported for gpt-6-luna ...
+  hint: This model rejects `reasoning_effort` together with tools — retry with `--reasoning-effort none`.
+  details: full response logged to logs/app_errors.log
+```
+
+Behaviour by entry point:
+
+| Entry point | On a provider error |
+|---|---|
+| `chat` (REPL) | Prints the block, keeps the session and prompt alive |
+| `run` (one-shot) | Prints the block, exits with status `1` (no traceback) |
+| `session compress --summarize` | Prints the block, exits with status `1` |
+
+Errors are **not** retried automatically: a streamed turn may already have printed partial output, so a retry is the user's decision. The log keeps the full body (truncated at 4 KB) for debugging, including the offending URL, provider, model and status.
+
 ## Configuration
 
 `FILES_BASE_DIR` controls the root directory that file tools can access. It defaults to `/workspace` (or `./workspace` on Windows) and can be overridden via environment variable or `--files-base-dir`:

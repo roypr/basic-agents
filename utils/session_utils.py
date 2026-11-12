@@ -8,6 +8,7 @@ import json
 from datetime import datetime
 from db.session_db import SessionDB
 from utils.history_compressor import compress_session as compress_session_fn
+from utils.llm_client import LLMError, render_error
 from utils.summarizer import summarize_history
 
 
@@ -54,7 +55,9 @@ def get_session(session_id: int):
         "system_prompt": session["system_prompt"],
         "messages": messages,
     }
-    filename = f"logs/session_{session_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    filename = (
+        f"logs/session_{session_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    )
     file_write(filename, json.dumps(session_data, indent=2))
     print(f"Session data saved to {filename}")
 
@@ -116,6 +119,11 @@ def compress_session_cmd(
                 llm_base=llm_base,
                 api_key=api_key,
             )
+        except LLMError as exc:
+            # Normalised provider failure: print the actionable form, keep the
+            # raw body in logs/app_errors.log.
+            print(render_error(exc))
+            return 1
         except Exception as exc:
             print(f"[Summarize] Failed: {exc}")
             return 1

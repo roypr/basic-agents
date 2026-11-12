@@ -14,6 +14,7 @@ import sys
 from cli import style
 from cli.resolver import build_resolver
 from cli.sink import ReplSink
+from utils.llm_client import LLMError, render_error
 
 HELP_TEXT = """\
 Commands:
@@ -164,6 +165,10 @@ class Repl:
         except KeyboardInterrupt:
             # Per-turn interrupt: return to the prompt, session stays resumable.
             self._output("\n[REPL] Turn interrupted. Session is resumable.")
+        except LLMError as exc:
+            # Already normalised and logged by the client; show the short,
+            # actionable form and keep the REPL (and the session) alive.
+            self._output(render_error(exc))
         except Exception as exc:
             self._output(f"[REPL] Turn failed: {exc}")
         finally:

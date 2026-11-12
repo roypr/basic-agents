@@ -14,11 +14,11 @@ from .base import (
     LLMOptions,
     ModelAdapter,
     PrintSink,
-    ProviderStreamError,
     StreamSink,
     iter_sse,
     normalize_effort,
 )
+from .errors import stream_error
 
 ANTHROPIC_VERSION = "2023-06-01"
 DEFAULT_MAX_TOKENS = 8192
@@ -306,11 +306,7 @@ class AnthropicAdapter(ModelAdapter):
                 event_type = obj.get("type") or event
 
                 if event_type == "error":
-                    error = obj.get("error") or {}
-                    message = (
-                        error.get("message") if isinstance(error, dict) else str(error)
-                    )
-                    raise ProviderStreamError(message or "Anthropic stream error")
+                    raise stream_error(obj, provider=self.provider)
 
                 if event_type == "message_start":
                     message = obj.get("message") or {}

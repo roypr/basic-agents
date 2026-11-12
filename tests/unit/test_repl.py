@@ -4,6 +4,7 @@ from types import SimpleNamespace
 import pytest
 
 from cli.repl import Repl, run_repl
+from utils.llm_client import LLMError
 
 
 class _ScriptedInput:
@@ -61,6 +62,14 @@ def _fake_agent_cls(created):
                 raise KeyboardInterrupt
             if query == "boom":
                 raise RuntimeError("kaboom")
+            if query == "llm-error":
+                raise LLMError(
+                    "Missing Authentication header",
+                    kind="auth",
+                    provider="kimi",
+                    model="kimi-k2",
+                    status_code=401,
+                )
             self.session_id = 99
 
         def shutdown(self):
@@ -135,6 +144,20 @@ class TestReplTurns:
 
         assert repl.agent.run_calls == ["boom", "after"]
         assert any("failed" in line.lower() for line in out)
+
+    def test_llm_error_is_rendered_and_repl_continues(self, monkeypatch):
+        created, out = [], []
+        repl = _repl(["llm-error", "after", "/quit"], created, monkeypatch, out)
+
+        repl.run()
+
+        assert repl.agent.run_calls == ["llm-error", "after"]
+        rendered = "\n".join(out)
+        assert "[LLM error] kimi/kimi-k2" in rendered
+        assert "authentication failed" in rendered
+        assert "Missing Authentication header" in rendered
+        # A provider failure must not leak a traceback or kill the loop.
+        assert "Traceback" not in rendered
 
     def test_eof_shuts_down_once(self, monkeypatch):
         created, out = [], []

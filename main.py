@@ -7,6 +7,7 @@ from pathlib import Path
 from cli.resolver import build_resolver
 from utils.console import configure_console
 from utils.file_utils import build_query, encode_image_base64, parse_line_range
+from utils.llm_client import LLMError, render_error
 from utils.provider_config import ProviderConfig, ProviderError, resolve_provider
 
 
@@ -162,6 +163,11 @@ def do_run(args):
     except KeyboardInterrupt:
         print("\nInterrupted by user. Shutting down gracefully...")
         sys.exit(0)
+    except LLMError as exc:
+        # One-shot run: show the actionable form and fail with a non-zero code
+        # instead of dumping a traceback. The raw body is already in the log.
+        print(render_error(exc))
+        sys.exit(1)
     finally:
         agent.shutdown()
 

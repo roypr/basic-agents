@@ -23,11 +23,13 @@ from typing import Iterable, Iterator, Protocol
 from cli.style import dim
 from utils.console import safe_write
 
+from .errors import (  # noqa: F401  (ProviderStreamError is re-exported)
+    ProviderStreamError,
+    is_error_payload,
+    stream_error,
+)
+
 logger = logging.getLogger("basic_agents")
-
-
-class ProviderStreamError(RuntimeError):
-    """Raised when a provider reports an error inside a streaming response."""
 
 
 class StreamSink(Protocol):
@@ -313,11 +315,8 @@ class ModelAdapter:
                 except json.JSONDecodeError:
                     continue
 
-                if isinstance(chunk, dict) and chunk.get("error"):
-                    error = chunk["error"]
-                    if isinstance(error, dict):
-                        error = error.get("message") or error
-                    raise ProviderStreamError(str(error))
+                if isinstance(chunk, dict) and is_error_payload(chunk):
+                    raise stream_error(chunk, provider=self.provider)
 
                 choices = chunk.get("choices") or []
                 if not choices:
