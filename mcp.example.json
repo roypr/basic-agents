@@ -1,0 +1,24 @@
+{
+  "enabled": true,
+  "safe_tools": [],
+  "servers": {
+    "filesystem": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "/workspace"
+      ],
+      "env": {},
+      "agents": [],
+      "allowed_tools": [],
+      "denied_tools": [],
+      "timeout": 60,
+      "required": false,
+      "inherit_env": true,
+      "expose_resources": false,
+      "expose_prompts": false
+    }
+  }
+}

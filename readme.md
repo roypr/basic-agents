@@ -22,15 +22,16 @@ basic-agents/
 │       ├── system_prompt.txt # Agent-specific system prompt
 │       └── tools.py          # Agent-specific tools
 ├── core/                # Base agent class, tool registry, and shared loop logic
-├── cli/                 # Interactive REPL, permission prompts, stream sink
-├── db/                  # SQLite session persistence (session_db.py)
 ├── utils/               # File helpers, LLM client, session manager, tool executor
+│   └── mcp/             # Optional MCP tool servers (config, connection, adapter)
 ├── tests/               # pytest test suite
 ├── main.py              # CLI entry point with run + chat + session subcommands
 ├── config.py            # Global config (FILES_BASE_DIR)
 ├── providers.json       # Provider/model config (not committed — copy providers.example.json)
 ├── providers.example.json # Template for providers.json
-├── requirements.txt     # Runtime deps: requests, ddgs
+├── mcp.json             # MCP servers (not committed — copy mcp.example.json)
+├── mcp.example.json     # Template for mcp.json
+├── requirements.txt     # Runtime deps: requests, ddgs, mcp (optional)
 ├── requirements-dev.txt # Dev deps: pytest, pytest-cov, pytest-mock, pytest-asyncio, python-dotenv
 └── pytest.ini           # pytest config
 ```
@@ -399,6 +400,112 @@ cp providers.example.json providers.json
 
 > `providers.json` contains secrets and should **not** be committed. It is already covered by `.gitignore`.
 
+## MCP Tool Servers
+
+[Model Context Protocol](https://modelcontextprotocol.io) servers expose JSON-Schema tools, which map one-to-one onto this framework's tool list. MCP is therefore just another *tool source*: the agent loop, provider adapters, session database and permission gate are unchanged, and MCP tools work with every provider (OpenAI, DeepSeek, OpenRouter, Anthropic, local servers).
+
+### Setup
+
+```bash
+pip install "mcp"                 # optional dependency (lazy-imported)
+cp mcp.example.json mcp.json      # then edit commands/args
+```
+
+`mcp.json` is read at startup; it is gitignored because it may contain tokens.
+
+```json
+{
+  "enabled": true,
+  "safe_tools": [],
+  "servers": {
+    "filesystem": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/workspace"],
+      "agents": ["code"],
+      "allowed_tools": ["read_file", "list_directory"],
+      "denied_tools": [],
+      "timeout": 60,
+      "required": false,
+      "inherit_env": true,
+      "expose_resources": false,
+      "expose_prompts": false
+    },
+    "github": {
+      "transport": "http",
+      "url": "https://api.githubcopilot.com/mcp/",
+      "headers": { "Authorization": "Bearer ${GITHUB_TOKEN}" },
+      "agents": [],
+      "timeout": 120
+    }
+  }
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `transport` | `stdio` (default), `http` (Streamable HTTP; aliases `streamable-http`, `streamable_http`) or `sse` (legacy) |
+| `command` / `args` | Process launched over stdio |
+| `url` | Endpoint for `http` / `sse` transports (must be `http://` or `https://`) |
+| `headers` | Extra HTTP headers for `http` / `sse`; supports `${VAR}` and `${VAR:-default}` |
+| `env` | Extra environment variables for stdio; supports `${VAR}` and `${VAR:-default}` |
+| `inherit_env` | Merge `os.environ` into the child (default `true`; needed for `npx`/`node`/`uv` on `PATH`) |
+| `agents` | Restrict the server to those agent directories; empty/omitted means every agent |
+| `allowed_tools` / `denied_tools` | Filter the exposed tools (keeps schemas small; `denied_tools` wins) |
+| `timeout` | Per-call timeout in seconds (default 60) |
+| `required` | Fail agent startup if the server cannot start (default `false`: warn and continue) |
+| `expose_resources` / `expose_prompts` | Also expose the server's resources/prompts as tools (default `false`) |
+| `safe_tools` (top level) | Public tool names to run without a permission prompt — exact, bare (`fs__read`) or prefix (`mcp__fs__*`) |
+
+Transports are resolved against the installed SDK, including the renames across its 1.x line: `mcp.client.streamable_http.streamable_http_client` (2.x and newer 1.x) and `...streamablehttp_client` (older 1.x) are both found automatically. Auth headers are passed in whichever dialect the factory signature expects — a caller-owned `httpx2.AsyncClient` (2.x) or `httpx.AsyncClient` (1.x) — and fall back to a plain `headers` kwarg, so both SDK lines work without configuration.
+
+### Resources and prompts
+
+With `expose_resources` / `expose_prompts` enabled — and only when the server advertises the capability — each server adds two synthetic tools, rather than one tool per resource, so the schema payload stays small and templated URIs still work:
+
+| Tool | Arguments |
+|---|---|
+| `mcp__<server>__list_resources` | — |
+| `mcp__<server>__read_resource` | `uri` |
+| `mcp__<server>__list_prompts` | — |
+| `mcp__<server>__get_prompt` | `name`, `arguments` (object) |
+
+If the server already exposes a real tool with the same name, the real tool wins and the synthetic one is skipped with a warning.
+
+### Behaviour
+
+- **Namespacing** — tools appear as `mcp__<server>__<tool>`, so two servers can expose the same generic name and permission rules read clearly. Names are sanitised to `[A-Za-z0-9_-]` and capped at 64 characters (a hash suffix keeps long names distinct).
+- **Permissions** — MCP tools are **not** in `SAFE_TOOLS`, so they default to `ask` (fail-closed). An MCP server runs outside the `safe_path()` sandbox, so pre-approval is explicit via `safe_tools`.
+- **Results** — text blocks are joined; an image block reuses the existing image marker, so the model sees the image natively for every provider; `isError` becomes an `Error: …` tool result; `structuredContent` is JSON-encoded when there is no text. Resource reads report binary payloads as `(binary resource <uri> [mime], N bytes)`; prompts render as a role-tagged transcript.
+- **Failures** — a tool failure comes back as an `Error: …` tool result (the loop continues); a missing server is a startup warning, or an error with `"required": true`. Diagnostics go to `logs/app_errors.log`.
+- **Lifecycle** — one connection per server is shared process-wide and reused across `/provider`, `/model` and `/agents` switches; connections close on `shutdown()` (`/quit`, EOF, or the end of a one-shot run).
+
+### Flags and commands
+
+| Flag / command | Effect |
+|---|---|
+| `--mcp-config <path>` | Use a specific config file (default: `./mcp.json` when present) |
+| `--no-mcp` | Disable MCP for this run |
+| `python main.py mcp list` | Connect to every configured server and report transport, tool count and capabilities |
+| `/mcp` | REPL: show what MCP contributed to the current agent |
+| `/mcp reconnect [name]` | REPL: drop a connection (or all) and re-discover tools after editing `mcp.json` |
+
+`BASIC_AGENTS_NO_MCP=1` disables MCP process-wide (CI, sandboxes, debugging). An explicit `--mcp-config` path that does not exist is an error rather than a silent disable.
+
+Startup output reports what was loaded:
+
+```
+[MCP] 6 tools from filesystem (6 tools), github (12 tools)
+```
+
+`mcp list` output looks like:
+
+```
+[filesystem] stdio -> npx (6 tools, agents: code) [resources]
+[github] http -> https://api.githubcopilot.com/mcp/ (12 tools, agents: all) [resources, prompts]
+```
+
+The transport layer is verified against real SDK builds (stdio, Streamable HTTP and SSE, on both the `mcp` 1.x and 2.x lines) by the scripts in `tests/manual/mcp/`; re-run them after bumping the optional `mcp` requirement.
 ## Error Handling
 
 Every provider reports failures differently (OpenAI-style `{"error": {...}}`, Anthropic's `{"type": "error", ...}`, plain-text gateway responses, HTML error pages, or an error event inside an otherwise successful stream). All of them are normalised in `utils/llm/errors.py` into one `LLMError` carrying the provider, model, HTTP status, a category (`auth`, `rate_limit`, `context_length`, `invalid_request`, `server`, `network`, …), a retryability flag and an actionable hint.
@@ -445,6 +552,7 @@ python run_tests.py
 **Runtime**
 - `requests` — HTTP client for LLM server communication
 - `ddgs` — DuckDuckGo search (used by built-in search tools)
+- `mcp` — optional; required only when `mcp.json` declares servers (see [MCP Tool Servers](#mcp-tool-servers))
 
 **Dev**
 - `pytest`, `pytest-cov`, `pytest-mock`, `pytest-asyncio` — testing

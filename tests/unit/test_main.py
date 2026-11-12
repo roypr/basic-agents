@@ -1,6 +1,7 @@
 import pytest
 
 import main
+from main import build_parser, do_mcp, resolve_mcp_config
 
 
 def test_get_agent_class():
@@ -61,3 +62,74 @@ class TestParserPermissionFlags:
 
         assert args.max_output_tokens == 4096
         assert args.reasoning_effort == "high"
+
+
+@pytest.mark.unit
+class TestMcpCommand:
+    def test_mcp_list_registered(self):
+        args = build_parser().parse_args(["mcp", "list"])
+
+        assert args.command == "mcp"
+        assert args.mcp_command == "list"
+        assert args.no_mcp is False
+
+    def test_mcp_list_flags(self):
+        args = build_parser().parse_args(
+            ["mcp", "list", "--mcp-config", "custom.json", "--no-mcp"]
+        )
+
+        assert args.mcp_config == "custom.json"
+        assert args.no_mcp is True
+
+    def test_do_mcp_without_config_is_a_no_op(self, capsys):
+        args = build_parser().parse_args(["mcp", "list", "--no-mcp"])
+
+        do_mcp(args)
+
+        assert "No MCP servers configured" in capsys.readouterr().out
+
+    def test_do_mcp_missing_explicit_config_exits(self, monkeypatch):
+        # The suite-wide kill switch is bypassed so the explicit path is read.
+        monkeypatch.delenv("BASIC_AGENTS_NO_MCP", raising=False)
+        args = build_parser().parse_args(["mcp", "list", "--mcp-config", "nope.json"])
+
+        with pytest.raises(SystemExit) as excinfo:
+            do_mcp(args)
+
+        assert excinfo.value.code == 1
+
+    def test_do_mcp_prints_rows(self, monkeypatch, capsys):
+        from utils.mcp import McpConfig, McpServerConfig
+
+        monkeypatch.setattr(
+            "main.resolve_mcp_config",
+            lambda args: McpConfig(enabled=True, servers=(McpServerConfig(name="fs", command="x"),)),
+        )
+        monkeypatch.setattr(
+            "main.describe_servers",
+            lambda config: [
+                {
+                    "name": "fs",
+                    "transport": "stdio",
+                    "target": "npx server",
+                    "agents": "all",
+                    "tools": 3,
+                    "resources": True,
+                    "prompts": False,
+                    "error": None,
+                }
+            ],
+        )
+        monkeypatch.setattr("main.close_mcp_servers", lambda: None)
+
+        do_mcp(build_parser().parse_args(["mcp", "list"]))
+
+        out = capsys.readouterr().out
+        assert "[fs] stdio -> npx server (3 tools, agents: all) [resources]" in out
+
+    def test_resolve_mcp_config_no_mcp_disables(self):
+        args = build_parser().parse_args(["run", "--no-mcp"])
+
+        resolved = resolve_mcp_config(args)
+
+        assert resolved.enabled is False

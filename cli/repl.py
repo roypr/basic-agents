@@ -15,6 +15,7 @@ from cli import style
 from cli.resolver import build_resolver
 from cli.sink import ReplSink
 from utils.llm_client import LLMError, render_error
+from utils.mcp import McpError
 
 HELP_TEXT = """\
 Commands:
@@ -27,6 +28,7 @@ Commands:
   /model [name]      Show or switch the model
   /image <path>      Attach an image to the next turn
   /file <path> [lines]  Attach a file's contents to the next turn
+  /mcp [reconnect [name]]  Show MCP servers, or reconnect them
 Anything else is sent to the agent as a prompt.
 
 Startup options (pass when launching chat):
@@ -82,6 +84,9 @@ class Repl:
         try:
             self._prepare_attachments()
             self._instantiate()
+        except McpError as exc:  # server config/startup problem
+            self._output(exc.render())
+            return 1
         except Exception as exc:  # startup failure — nothing to shut down
             self._output(f"[REPL] Could not start: {exc}")
             return 1
@@ -193,7 +198,7 @@ class Repl:
         session is already bound, so we rebind directly instead of letting the
         first ``run()`` re-resolve it via ``init_session_db``.
         """
-        from main import get_agent_class
+        from main import get_agent_class, resolve_mcp_config
         from utils.provider_config import resolve_provider
 
         agent_cls = get_agent_class(self.agent_name)
@@ -223,6 +228,9 @@ class Repl:
                 getattr(self.args, "reasoning_effort", None)
                 or provider_cfg.reasoning_effort
             ),
+            # MCP connections are reused across re-instantiation (see
+            # utils.mcp.manager), so switching provider/model is cheap.
+            mcp_config=resolve_mcp_config(self.args),
         )
         if preserve_binding and self.resume_session is not None:
             agent.session_id = self.resume_session
@@ -234,6 +242,11 @@ class Repl:
         old = self.agent
         try:
             self._instantiate(preserve_binding=True)
+        except McpError as exc:
+            # MCP startup problems get the actionable block, not a raw repr.
+            self.agent = old
+            self._output(exc.render())
+            return
         except Exception as exc:
             self.agent = old
             self._output(f"[REPL] Could not switch: {exc}")
@@ -271,9 +284,53 @@ class Repl:
             self._handle_image(rest)
         elif cmd == "/file":
             self._handle_file(rest)
+        elif cmd == "/mcp":
+            self._handle_mcp(rest)
         else:
             self._output(f"[REPL] Unknown command: {cmd}. Type /help.")
         return None
+
+    def _handle_mcp(self, rest: str | None) -> None:
+        """Show MCP status, or reconnect servers after a config change."""
+        from utils.mcp import close_mcp_server, close_mcp_servers
+
+        tokens = (rest or "").split()
+
+        if tokens and tokens[0].lower() == "reconnect":
+            target = tokens[1] if len(tokens) > 1 else None
+            if target:
+                closed = close_mcp_server(target)
+                outcome = (
+                    f"reconnected '{target}'"
+                    if closed
+                    else f"'{target}' was not connected; re-discovering"
+                )
+            else:
+                close_mcp_servers()
+                outcome = "reconnected all MCP servers"
+            # Rebuild the agent so the tool list is re-discovered (the
+            # connection registry reconnects lazily on the way back in).
+            self._reinstantiate()
+            self._output(f"[REPL] MCP: {outcome}.")
+            self._report_mcp()
+            return
+
+        self._report_mcp()
+
+    def _report_mcp(self) -> None:
+        """Print what MCP contributed to the current agent."""
+        mcp = getattr(self.agent, "mcp", None)
+        if mcp is None or not getattr(mcp, "enabled", False):
+            self._output(
+                "[REPL] MCP is disabled (start with --mcp-config, or create mcp.json)."
+            )
+            return
+        lines = mcp.report_lines()
+        self._output(
+            "\n".join(lines)
+            if lines
+            else "[REPL] MCP is enabled but no servers apply to this agent."
+        )
 
     def _handle_image(self, rest: str | None) -> None:
         """Queue an image (--image equivalent) for the next turn."""

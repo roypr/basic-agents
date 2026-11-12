@@ -12,3 +12,6 @@ todo.txt
 workspace/*
 logs/*
 providers.json
+
+# Local MCP server definitions (may contain tokens)
+mcp.json
