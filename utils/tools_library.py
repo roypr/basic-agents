@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 import shutil
 from .html_utils import extract_text_from_html
+from .console import safe_print
 from .file_utils import (
     _remove_lines,
     safe_path,
@@ -25,7 +26,7 @@ from .file_utils import (
 def get_current_date() -> str:
     now = datetime.now(timezone.utc)
     result = now.strftime("UTC: %Y-%m-%d %H:%M:%S")
-    print(f"[Tool: Date] {result}")
+    safe_print(f"[Tool: Date] {result}")
     return result
 
 
@@ -47,10 +48,10 @@ def read_image(path: str) -> str:
                 ),
             }
         )
-        print(f"[Tool: Read Image] path: {path} ({mime}, {len(b64)} base64 chars)")
+        safe_print(f"[Tool: Read Image] path: {path} ({mime}, {len(b64)} base64 chars)")
         return result
     except Exception as e:
-        print(f"[Tool: Read Image] Error: {e}")
+        safe_print(f"[Tool: Read Image] Error: {e}")
         return f"Error: {e}"
 
 
@@ -62,12 +63,12 @@ def web_search(query: str, page: int = 1, results_per_page: int = 10) -> str:
         {"title": r["title"], "snippet": r["body"], "href": r["href"]}
         for r in page_results
     ]
-    print(f"[Tool: Web Search] Results: {len(results)}")
+    safe_print(f"[Tool: Web Search] Results: {len(results)}")
     for r in results:
         snippet_preview = r["snippet"].replace("\n", " ").strip()
         if len(snippet_preview) > 100:
             snippet_preview = snippet_preview[:100].rstrip() + "..."
-        print(f"{r['title']}: {snippet_preview}")
+        safe_print(f"{r['title']}: {snippet_preview}")
 
     return json.dumps(results)
 
@@ -81,12 +82,12 @@ def request_get(url: str) -> str:
     else:
         text = resp.text
 
-    print(f"[Tool: Web Page] Url: {url}")
+    safe_print(f"[Tool: Web Page] Url: {url}")
     return text[:4000]
 
 
 def finish(message: str = "") -> str:
-    print(f"[Finish] {message}")
+    safe_print(f"[Finish] {message}")
 
     return message or "Done."
 
@@ -106,7 +107,7 @@ def get_all_files(base_dir: str = ".") -> str:
             continue
         all_files.append(rel.as_posix())
 
-    print(f"[Tool: Get Files] {len(all_files)} Files found")
+    safe_print(f"[Tool: Get Files] {len(all_files)} Files found")
     return json.dumps(all_files)
 
 
@@ -115,9 +116,9 @@ def file_read(path: str) -> str:
 
     try:
         result = _file_read(path)
-        print(f"[Tool: File read] path: {path}")
+        safe_print(f"[Tool: File read] path: {path}")
     except Exception as e:
-        print(f"[Tool: File read] Error: {e}")
+        safe_print(f"[Tool: File read] Error: {e}")
         result = str(e)
     return result
 
@@ -128,9 +129,9 @@ def file_write(path: str, content: str) -> str:
     try:
         _file_write(path, content)
         result = f"Written to {path}"
-        print(f"[Tool: File write] path: {path}")
+        safe_print(f"[Tool: File write] path: {path}")
     except Exception as e:
-        print(f"[Tool: File write] Error: {e}")
+        safe_print(f"[Tool: File write] Error: {e}")
         result = str(e)
     return result
 
@@ -141,9 +142,9 @@ def file_edit(path: str, new_str: str, old_str: str = None) -> str:
     try:
         _file_edit(path, new_str, old_str)
         result = f"Edited {path}"
-        print(f"[Tool: File Edit] path: {path}")
+        safe_print(f"[Tool: File Edit] path: {path}")
     except Exception as e:
-        print(f"[Tool: File Edit] Error: {e}")
+        safe_print(f"[Tool: File Edit] Error: {e}")
         result = str(e)
     return result
 
@@ -167,9 +168,9 @@ def read_lines(path: str, start_line: int, end_line: int) -> str:
 
     try:
         result = _read_lines(path, start_line, end_line)
-        print(f"[Tool: Read lines] path: {path} lines: {start_line}-{end_line}")
+        safe_print(f"[Tool: Read lines] path: {path} lines: {start_line}-{end_line}")
     except Exception as e:
-        print(f"[Tool: Read lines] Error: {e}")
+        safe_print(f"[Tool: Read lines] Error: {e}")
         result = str(e)
     return result
 
@@ -183,9 +184,9 @@ def replace_lines(
         result = _replace_lines(path, start_line, new_content, end_line)
         result += f"\nLine numbers from {start_line} to the end have changed. Check updated content of {path} below\n"
         result += _file_read(path)
-        print(f"[Tool: Replace lines] path: {path} start: {start_line} end: {end_line}")
+        safe_print(f"[Tool: Replace lines] path: {path} start: {start_line} end: {end_line}")
     except Exception as e:
-        print(f"[Tool: Replace lines] Error: {e}")
+        safe_print(f"[Tool: Replace lines] Error: {e}")
         result = str(e)
     return result
 
@@ -197,9 +198,9 @@ def remove_lines(path: str, start_line: int, end_line: int = None) -> str:
         result = _remove_lines(path, start_line, end_line)
         result += f"\nLine numbers from {start_line} to the end have changed. Check updated content of {path} below\n"
         result += _file_read(path)
-        print(f"[Tool: Remove lines] path: {path} start: {start_line} end: {end_line}")
+        safe_print(f"[Tool: Remove lines] path: {path} start: {start_line} end: {end_line}")
     except Exception as e:
-        print(f"[Tool: Remove lines] Error: {e}")
+        safe_print(f"[Tool: Remove lines] Error: {e}")
         result = str(e)
     return result
 
@@ -244,7 +245,7 @@ def glob_search(pattern: str, path: str | None = None, limit: int = 100):
 
     results = [m["path"] for m in matches[:limit]]
 
-    print(f"[Tool: Glob] {len(results)} matches")
+    safe_print(f"[Tool: Glob] {len(results)} matches")
     return results
 
 
@@ -314,7 +315,7 @@ def run_command(command: str, timeout: int = 30) -> str:
     except Exception as e:
         result = f"Error running command: {e}"
 
-    print(f"[Tool: Run Command] {command} \n {result}")
+    safe_print(f"[Tool: Run Command] {command} \n {result}")
     return result
 
 
@@ -398,5 +399,5 @@ def grep_search(
     except Exception as e:
         result = f"Error running grep search: {e}"  # ← match run_command
 
-    print(f"[Tool: Grep] {result}")
+    safe_print(f"[Tool: Grep] {result}")
     return result

@@ -2,7 +2,7 @@
 
 > **Make agents do anything — with just a prompt and tools.**
 
-A simple, extendable agentic framework for running LLM-powered agents against any OpenAI-compatible local or remote inference server.
+A simple, extendable agentic framework for running LLM-powered agents against OpenAI-compatible, DeepSeek, OpenRouter, and Anthropic Messages endpoints.
 
 ## Overview
 
@@ -134,6 +134,8 @@ Sessions persist the full conversation history, so the agent picks up with compl
 | `--llm-base` | — | Override the LLM base URL (bypasses `providers.json`) |
 | `--api-key` | — | Override the API key (bypasses `providers.json`) |
 | `--max-turns` | `10` | Maximum tool-call rounds before stopping — set generously for long tasks |
+| `--max-output-tokens` | provider default | Output token budget. Mapped per provider: OpenAI `max_completion_tokens`, Anthropic/DeepSeek/OpenRouter `max_tokens` |
+| `--reasoning-effort` | provider default | Reasoning effort: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` |
 | `--files-base-dir` | `/workspace` | Base directory exposed to file tools |
 | `--include` | — | Path to a file whose contents are appended to the query |
 | `--lines` | — | Line range from `--include`, e.g. `10-20` or `20` |
@@ -227,6 +229,8 @@ Redirected or piped output, logs and captured test output are always plain text,
 ```bash
 NO_COLOR=1 python main.py chat
 ```
+
+Reasoning text is buffered and printed as one block rather than streamed token-by-token. This keeps CJK reasoning readable and avoids legacy Windows console encoding failures. Console output is also configured to use UTF-8 where the terminal supports it, with escaped output as a fallback.
 
 ## Session Management
 
@@ -323,32 +327,68 @@ The framework discovers agents by directory name, so no registration step is nee
 
 ## Providers
 
-Model endpoints are configured in `providers.json` at the project root. The file is intentionally lightweight — just providers, their API URLs/keys, and the models each exposes. No router, fallback, or transformer logic.
+Model endpoints are configured in `providers.json` at the project root. Each provider declares a `type`, base URL, API key, and the models it exposes. The framework currently supports four wire protocols:
+
+| `type` | Endpoint | Auth | Reasoning control | Output budget field |
+|---|---|---|---|---|
+| `openai` | `/v1/chat/completions` | `Authorization: Bearer` | `reasoning_effort` | `max_completion_tokens` |
+| `deepseek` | `/chat/completions` | `Authorization: Bearer` | `reasoning_effort` + `thinking` | `max_tokens` |
+| `openrouter` | `/api/v1/chat/completions` | `Authorization: Bearer` | `reasoning: {effort}` | `max_tokens` |
+| `anthropic` | `/v1/messages` | `x-api-key` + `anthropic-version` | `thinking` + `output_config.effort` | `max_tokens` (required) |
+
+`type` is optional: if omitted, the adapter is inferred from the provider name, base URL, or model name. Any other OpenAI-compatible endpoint can use `type: "openai_compatible"`.
 
 ```json
 {
   "default_provider": "deepseek",
-  "default_model": "deepseek-v4-flash",
+  "default_model": "deepseek-flash",
   "providers": [
     {
       "name": "deepseek",
-      "api_base_url": "https://api.deepseek.com/chat/completions",
+      "type": "deepseek",
+      "api_base_url": "https://api.deepseek.com",
       "api_key": "sk-...",
-      "models": ["deepseek-v4-pro", "deepseek-v4-flash"]
+      "models": ["deepseek-flash", "deepseek-v4-pro"],
+      "max_tokens": 8192,
+      "reasoning_effort": "high"
     },
     {
-      "name": "local",
-      "api_base_url": "http://localhost:8080/chat/completions",
-      "api_key": "sk-",
-      "models": ["claude-sonet-4.6"]
+      "name": "openai",
+      "type": "openai",
+      "api_base_url": "https://api.openai.com/v1",
+      "api_key": "sk-...",
+      "models": ["gpt-6-astra", "gpt-5.6-terra"],
+      "max_tokens": 8192,
+      "reasoning_effort": "medium"
+    },
+    {
+      "name": "openrouter",
+      "type": "openrouter",
+      "api_base_url": "https://openrouter.ai/api/v1",
+      "api_key": "sk-or-v1-...",
+      "models": ["deepseek/deepseek-v4-pro", "z-ai/glm-5.3-flash"],
+      "max_tokens": 8192
+    },
+    {
+      "name": "anthropic",
+      "type": "anthropic",
+      "api_base_url": "https://api.anthropic.com",
+      "api_key": "sk-ant-...",
+      "models": ["claude-opus-5-5", "claude-sonnet-5-5"],
+      "max_tokens": 8192,
+      "reasoning_effort": "high"
     }
   ]
 }
 ```
 
 - **`default_provider` / `default_model`** — used when `--provider` / `--model` are omitted.
-- **`providers[].name`** — referenced by `--provider`.
+- **`providers[].type`** — selects the adapter; inferred when omitted.
 - **`providers[].models`** — list of valid model names for `--model`.
+- **`providers[].max_tokens`** — provider-neutral output budget (Anthropic defaults to `8192` because the field is required).
+- **`providers[].reasoning_effort`** — default reasoning effort; `--reasoning-effort` overrides it.
+
+Provider-specific reasoning history is preserved automatically: DeepSeek `reasoning_content` (when tools are present), OpenRouter `reasoning_details`, and Anthropic signed `thinking` blocks survive a session resume. Reasoning is not sent to providers that do not accept it.
 
 A `providers.example.json` template is included. Copy it to get started:
 
@@ -357,7 +397,7 @@ cp providers.example.json providers.json
 # then edit providers.json with your real API keys
 ```
 
-> `providers.json` contains secrets and should **not** be committed. It is already covered by `.gitignore` if you add it there.
+> `providers.json` contains secrets and should **not** be committed. It is already covered by `.gitignore`.
 
 ## Configuration
 
@@ -389,4 +429,6 @@ python run_tests.py
 
 ## Compatibility
 
-Designed to work with any OpenAI-compatible `/chat/completions` endpoint. Tested with local servers running via llama.cpp / ik_llama.cpp. Works with remote providers configured in `providers.json` — including **OpenRouter**, **DeepSeek**, OpenAI, Together AI, and others. For one-off runs against an unconfigured endpoint, use `--llm-base` / `--model` / `--api-key` to bypass `providers.json`.
+Supports four provider protocols out of the box: **OpenAI**, **DeepSeek**, **OpenRouter**, and **Anthropic Messages**. Other OpenAI-compatible `/chat/completions` endpoints (including local llama.cpp / ik_llama.cpp servers) work with `type: "openai_compatible"` or by inference. For one-off runs against an unconfigured endpoint, use `--llm-base` / `--model` / `--api-key` to bypass `providers.json`.
+
+Only parameters the selected provider understands are sent. In particular, OpenAI reasoning models receive `max_completion_tokens` rather than the deprecated `max_tokens`, and llama.cpp-only fields (`cache_prompt`, `reasoning_format`, `repeat_*`, `top_k`, `typical_p`, `timings_per_token`) are not sent to remote providers.

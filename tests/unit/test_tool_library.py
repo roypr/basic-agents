@@ -1,12 +1,13 @@
-from utils.tools_library import grep_search, run_command, get_all_files
+from utils.tools_library import grep_search, get_all_files
 
 
-def test_grep_search():
-    # Setup: create test files
-    run_command("mkdir -p test_grep")
-    run_command("echo 'hello world' > test_grep/a.txt")
-    run_command("echo 'hello python' > test_grep/b.txt")
-    run_command("echo 'goodbye world' > test_grep/c.txt")
+def test_grep_search(monkeypatch, tmp_path):
+    monkeypatch.setattr("utils.file_utils.FILES_BASE_DIR", str(tmp_path))
+    search_dir = tmp_path / "test_grep"
+    search_dir.mkdir()
+    (search_dir / "a.txt").write_text("hello world\n", encoding="utf-8")
+    (search_dir / "b.txt").write_text("hello python\n", encoding="utf-8")
+    (search_dir / "c.txt").write_text("goodbye world\n", encoding="utf-8")
 
     print("1. files_with_matches:")
     print(grep_search("hello", path="test_grep"))
@@ -29,18 +30,18 @@ def test_grep_search():
     print("\n7. bad pattern (should return error string):")
     print(grep_search("[invalid", path="test_grep"))
 
-    # Cleanup
-    run_command("rm -rf test_grep")
 
+def test_get_all_files(monkeypatch, tmp_path):
+    import json
 
-def test_get_all_files():
-    run_command("mkdir -p src/code")
-    run_command("echo 'hello world' > src/code/a.txt")
-    run_command("echo 'hello world' > src/code/b.txt")
+    monkeypatch.setattr("utils.file_utils.FILES_BASE_DIR", str(tmp_path))
+    (tmp_path / "src" / "code").mkdir(parents=True)
+    (tmp_path / "src" / "code" / "a.txt").write_text("hello world", encoding="utf-8")
+    (tmp_path / "src" / "code" / "b.txt").write_text("hello world", encoding="utf-8")
 
-    result = get_all_files("src")
+    result = json.loads(get_all_files("src"))
     print(result)
-    assert isinstance(result, dict), "The function should return a dictionary."
+    assert result == ["code/a.txt", "code/b.txt"]
 
 
 def test_read_image(monkeypatch, tmp_path):

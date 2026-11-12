@@ -17,7 +17,7 @@ SUMMARIZE_SYSTEM_PROMPT = (
     "You shall produce a snapshot of current state, not a timeline. How things happened is not important."
     "First try to extract and summarize Assistant's understanding of the overall project."
     "Then extract and summarize the tasks it attempted to do, the goals, and current status of each task / goal."
-    "If you see mention of file changes, track and summarize the changes made to each file. Mention function names, what was achieved in plain english." 
+    "If you see mention of file changes, track and summarize the changes made to each file. Mention function names, what was achieved in plain english."
     "Mention unfinished tasks in more detail than finished ones, which are to be passed on to assistant again or looked at by experts."
     "You might find a summary of the tasks completed in the end of the conversation. Do not copy paste it, but use it to create your response. Your response should follow"
     "structure stated above."
@@ -53,6 +53,9 @@ def summarize_history(
         resolved_base = llm_base
         resolved_api_key = api_key
         resolved_model = model or "local"
+        resolved_type = provider or ""
+        resolved_max_tokens = None
+        resolved_effort = None
     else:
         try:
             provider_cfg = resolve_provider(provider, model)
@@ -63,8 +66,13 @@ def summarize_history(
         resolved_base = provider_cfg.api_base_url
         resolved_api_key = provider_cfg.api_key
         resolved_model = provider_cfg.model
+        resolved_type = provider_cfg.provider_type
+        resolved_max_tokens = provider_cfg.max_tokens
+        resolved_effort = provider_cfg.reasoning_effort
 
-    adapter = get_adapter(resolved_model)
+    adapter = get_adapter(
+        resolved_model, provider_name=resolved_type, api_base_url=resolved_base
+    )
 
     # Build a one-shot payload: system instruction + user messages
     payload = [
@@ -87,6 +95,9 @@ def summarize_history(
         api_key=resolved_api_key,
         adapter=adapter,
         use_tools=False,
+        max_tokens=resolved_max_tokens,
+        reasoning_effort=resolved_effort,
+        provider_type=resolved_type,
     )
 
     return adapter.extract_content(result)

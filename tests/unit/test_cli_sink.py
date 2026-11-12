@@ -38,7 +38,9 @@ class TestPrintSink:
         sink.content("answer")
         sink.end()
 
-        assert capsys.readouterr().out == "\n[Think] thinking\nanswer\n"
+        # Reasoning is buffered and emitted once when content starts, so CJK
+        # reasoning is never streamed token-by-token to a legacy console.
+        assert capsys.readouterr().out == "\n[Think]\nthinking\n[/Think]\nanswer\n"
 
     def test_content_only_has_no_think_prefix(self, capsys):
         sink = PrintSink()
@@ -57,8 +59,8 @@ class TestPrintSink:
         sink.reasoning("r")
         sink.end()
 
-        # Second stream must re-emit the [Think] prefix (state was reset).
-        assert capsys.readouterr().out == "\none\n\n[Think] r\n"
+        # Second stream must re-emit the [Think] block (state was reset).
+        assert capsys.readouterr().out == "\none\n\n[Think]\nr\n[/Think]\n\n"
 
 
 @pytest.mark.unit

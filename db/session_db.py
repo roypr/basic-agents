@@ -28,6 +28,9 @@ class SessionDB:
                 "content TEXT NOT NULL, "
                 "tool_calls TEXT, "
                 "tool_call_id TEXT, "
+                "reasoning_content TEXT, "
+                "reasoning_details TEXT, "
+                "reasoning_blocks TEXT, "
                 "timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP, "
                 "FOREIGN KEY (session_id) REFERENCES sessions (id))"
             )
@@ -42,6 +45,15 @@ class SessionDB:
             columns = [row[1] for row in cursor.fetchall()]
             if "tool_call_id" not in columns:
                 conn.execute("ALTER TABLE messages ADD COLUMN tool_call_id TEXT")
+            # Reasoning is part of the conversation for DeepSeek (tool mode),
+            # OpenRouter (reasoning_details) and Anthropic (signed thinking
+            # blocks), so it must survive a resume.
+            if "reasoning_content" not in columns:
+                conn.execute("ALTER TABLE messages ADD COLUMN reasoning_content TEXT")
+            if "reasoning_details" not in columns:
+                conn.execute("ALTER TABLE messages ADD COLUMN reasoning_details TEXT")
+            if "reasoning_blocks" not in columns:
+                conn.execute("ALTER TABLE messages ADD COLUMN reasoning_blocks TEXT")
 
             # Phase 3: Add agent_name column if missing
             cursor = conn.execute("PRAGMA table_info(sessions)")
@@ -115,13 +127,33 @@ class SessionDB:
         content: str,
         tool_calls=None,
         tool_call_id=None,
+        reasoning_content=None,
+        reasoning_details=None,
+        reasoning_blocks=None,
     ):
         tool_calls_json = json.dumps(tool_calls) if tool_calls else None
+        reasoning_details_json = (
+            json.dumps(reasoning_details) if reasoning_details else None
+        )
+        reasoning_blocks_json = (
+            json.dumps(reasoning_blocks) if reasoning_blocks else None
+        )
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.execute(
-                "INSERT INTO messages (session_id, role, content, tool_calls, tool_call_id) "
-                "VALUES (?, ?, ?, ?, ?)",
-                (session_id, role, content, tool_calls_json, tool_call_id),
+                "INSERT INTO messages ("
+                "session_id, role, content, tool_calls, tool_call_id, "
+                "reasoning_content, reasoning_details, reasoning_blocks"
+                ") VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    session_id,
+                    role,
+                    content,
+                    tool_calls_json,
+                    tool_call_id,
+                    reasoning_content,
+                    reasoning_details_json,
+                    reasoning_blocks_json,
+                ),
             )
             conn.execute(
                 "UPDATE sessions SET updated_at = CURRENT_TIMESTAMP WHERE id = ?",
@@ -134,7 +166,8 @@ class SessionDB:
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.execute(
-                "SELECT role, content, tool_calls, tool_call_id, timestamp "
+                "SELECT role, content, tool_calls, tool_call_id, "
+                "reasoning_content, reasoning_details, reasoning_blocks, timestamp "
                 "FROM messages "
                 "WHERE session_id = ? "
                 "ORDER BY timestamp ASC",
@@ -153,5 +186,13 @@ class SessionDB:
                         message["tool_calls"] = None
                 if row["tool_call_id"] is not None:
                     message["tool_call_id"] = row["tool_call_id"]
+                if row["reasoning_content"]:
+                    message["reasoning_content"] = row["reasoning_content"]
+                for column in ("reasoning_details", "reasoning_blocks"):
+                    if row[column]:
+                        try:
+                            message[column] = json.loads(row[column])
+                        except json.JSONDecodeError:
+                            pass
                 messages.append(message)
             return messages

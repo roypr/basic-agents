@@ -3,6 +3,7 @@ import ast
 import re
 from pathlib import Path
 import shutil
+from utils.console import safe_print
 from utils.file_utils import (
     _remove_lines,
     load_tool_definition,
@@ -313,7 +314,7 @@ def tree_sitter_tags(path: str) -> str:
     command = f'tree-sitter tags "{path}"'
     result = run_command(command, timeout=30)
 
-    print(f"[Tool: Tree-sitter Tags] {path}")
+    safe_print(f"[Tool: Tree-sitter Tags] {path}")
     return result
 
 
@@ -332,9 +333,9 @@ def file_write(path: str, content: str) -> str:
             if lang:
                 result += f"\n✓ Syntax OK ({lang})"
 
-        print(f"[Tool: File write] {result}")
+        safe_print(f"[Tool: File write] {result}")
     except Exception as e:
-        print(f"[Tool: File write] Error: {e}")
+        safe_print(f"[Tool: File write] Error: {e}")
         result = str(e)
     return result
 
@@ -354,9 +355,9 @@ def file_edit(path: str, new_str: str, old_str: str = None) -> str:
             if lang:
                 result += f"\n✓ Syntax OK ({lang})"
 
-        print(f"[Tool: File Edit] {result}")
+        safe_print(f"[Tool: File Edit] {result}")
     except Exception as e:
-        print(f"[Tool: File Edit] Error: {e}")
+        safe_print(f"[Tool: File Edit] Error: {e}")
         result = str(e)
     return result
 
@@ -375,12 +376,12 @@ def remove_lines(path: str, start_line: int, end_line: int = None) -> str:
             if lang:
                 result += f"\n✓ Syntax OK ({lang})"
 
-        print(f"[Tool: Remove lines] {result}")
+        safe_print(f"[Tool: Remove lines] {result}")
 
         result += f"\nLine numbers from {start_line} to the end have changed."
 
     except Exception as e:
-        print(f"[Tool: Remove lines] Error: {e}")
+        safe_print(f"[Tool: Remove lines] Error: {e}")
         result = str(e)
     return result
 
@@ -401,12 +402,12 @@ def replace_lines(
             if lang:
                 result += f"\n✓ Syntax OK ({lang})"
 
-        print(f"[Tool: Replace lines] {result}")
+        safe_print(f"[Tool: Replace lines] {result}")
 
         result += f"\nLine numbers from {start_line} to the end have changed"
 
     except Exception as e:
-        print(f"[Tool: Replace lines] Error: {e}")
+        safe_print(f"[Tool: Replace lines] Error: {e}")
         result = str(e)
     return result
 

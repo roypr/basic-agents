@@ -57,3 +57,27 @@ class TestResolveProvider:
 
         with pytest.raises(ProviderError):
             resolve_provider("beta", "alpha-default")
+
+    def test_provider_type_and_generation_defaults(self, monkeypatch):
+        data = {
+            "default_provider": "alpha",
+            "default_model": "alpha-default",
+            "providers": [
+                {
+                    "name": "alpha",
+                    "type": "anthropic",
+                    "api_base_url": "http://alpha",
+                    "api_key": "key-alpha",
+                    "models": ["alpha-default"],
+                    "max_tokens": 4096,
+                    "reasoning_effort": "high",
+                }
+            ],
+        }
+        monkeypatch.setattr(provider_config, "load_providers", lambda: data)
+
+        cfg = resolve_provider()
+
+        assert cfg.provider_type == "anthropic"
+        assert cfg.max_tokens == 4096
+        assert cfg.reasoning_effort == "high"

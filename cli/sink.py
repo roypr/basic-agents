@@ -1,9 +1,10 @@
 """Streaming sinks for the REPL.
 
 ``utils.llm_client`` renders streamed model output through a *sink*. The
-default sink (:class:`utils.llm_client.PrintSink`) preserves the original
-one-shot ``print()`` behavior; the REPL injects :class:`ReplSink`, which frames
-each turn so streamed output never runs into the next prompt.
+default sink (:class:`utils.llm_client.PrintSink`) prints a framed one-shot
+view (reasoning buffered, content streamed); the REPL injects
+:class:`ReplSink`, which frames each turn so streamed output never runs into
+the next prompt.
 
 Sinks are deliberately tiny and I/O-only: they carry no agent or policy logic,
 so one-shot ``run`` output is unchanged when no sink is supplied.

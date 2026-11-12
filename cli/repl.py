@@ -210,6 +210,14 @@ class Repl:
             api_key=api_key,
             permission_resolver=self._resolver,
             stream_sink=self._sink,
+            provider_type=provider_cfg.provider_type,
+            max_tokens=(
+                getattr(self.args, "max_output_tokens", None) or provider_cfg.max_tokens
+            ),
+            reasoning_effort=(
+                getattr(self.args, "reasoning_effort", None)
+                or provider_cfg.reasoning_effort
+            ),
         )
         if preserve_binding and self.resume_session is not None:
             agent.session_id = self.resume_session
@@ -412,7 +420,9 @@ def run_repl(args, permission_mode: str = "ask", input_fn=None, output_fn=None) 
 
 def main(argv=None):  # pragma: no cover - convenience for `python -m cli.repl`
     from main import build_parser, _effective_permission_mode, resolve_resume_session
+    from utils.console import configure_console
 
+    configure_console()
     parser = build_parser()
     args = parser.parse_args(argv)
     args.resume_session = resolve_resume_session(args)

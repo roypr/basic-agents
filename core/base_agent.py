@@ -41,6 +41,9 @@ class BaseAgent:
         permission_policy: PermissionPolicy | None = None,
         permission_resolver=None,
         stream_sink=None,
+        provider_type: str | None = None,
+        max_tokens: int | None = None,
+        reasoning_effort: str | None = None,
     ):
         self.name = name
         self.model = model
@@ -50,13 +53,18 @@ class BaseAgent:
         self.session_name = session_name
         self.api_key = api_key
         self.use_tools = use_tools
+        self.provider_type = provider_type or ""
+        self.max_tokens = max_tokens
+        self.reasoning_effort = reasoning_effort
         # Optional rendering sink for streamed output (None -> print directly).
         self.stream_sink = stream_sink
         self._shutdown_requested = False
         # Bound on the first run(); reused across REPL turns until reset.
         self.session_id: int | None = None
 
-        self.adapter = get_adapter(model)
+        self.adapter = get_adapter(
+            model, provider_name=self.provider_type, api_base_url=llm_base
+        )
         self.session_db = SessionDB()
         self.tools = self.get_tools()
         self.tool_map = self.get_tool_map()
@@ -345,6 +353,9 @@ class BaseAgent:
                 use_tools=self.use_tools,
                 tools=self.tools,
                 sink=self.stream_sink,
+                max_tokens=getattr(self, "max_tokens", None),
+                reasoning_effort=getattr(self, "reasoning_effort", None),
+                provider_type=getattr(self, "provider_type", None),
             )
 
             tool_calls = self.adapter.extract_tool_calls(msg)
@@ -354,9 +365,23 @@ class BaseAgent:
             assistant_message = self.adapter.build_assistant_message(
                 content, reasoning, tool_calls
             )
+            # Preserve provider-specific reasoning metadata needed on the next
+            # request (OpenRouter reasoning_details, Anthropic signed thinking
+            # blocks).  The adapter's public builder stays provider-neutral.
+            for key in ("reasoning_details", "reasoning_blocks"):
+                if msg.get(key):
+                    assistant_message[key] = msg[key]
 
             messages.append(assistant_message)
-            self.session_db.add_message(session_id, "assistant", content, tool_calls)
+            self.session_db.add_message(
+                session_id,
+                "assistant",
+                content,
+                tool_calls,
+                reasoning_content=reasoning or None,
+                reasoning_details=assistant_message.get("reasoning_details"),
+                reasoning_blocks=assistant_message.get("reasoning_blocks"),
+            )
 
             if not tool_calls:
                 return

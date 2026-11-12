@@ -5,8 +5,9 @@ from importlib import import_module
 from pathlib import Path
 
 from cli.resolver import build_resolver
+from utils.console import configure_console
 from utils.file_utils import build_query, encode_image_base64, parse_line_range
-from utils.provider_config import ProviderError, resolve_provider
+from utils.provider_config import ProviderConfig, ProviderError, resolve_provider
 
 
 def get_agent_class(agent_name: str):
@@ -31,11 +32,16 @@ def get_agent_class(agent_name: str):
 
 
 def resolve_llm_config(provider, model, llm_base, api_key):
-    """Resolve provider/model config, returning (llm_base, api_key, model)."""
+    """Resolve provider/model config into a :class:`ProviderConfig`."""
     if llm_base is not None:
-        return llm_base, api_key or "", model or "local"
-    provider_cfg = resolve_provider(provider, model)
-    return provider_cfg.api_base_url, provider_cfg.api_key, provider_cfg.model
+        return ProviderConfig(
+            name=provider or "custom",
+            api_base_url=llm_base,
+            api_key=api_key or "",
+            model=model or "local",
+            provider_type=provider or "",
+        )
+    return resolve_provider(provider, model)
 
 
 def resolve_resume_session(args):
@@ -121,7 +127,7 @@ def do_run(args):
         sys.exit(1)
 
     try:
-        llm_base, api_key, model = resolve_llm_config(
+        provider_cfg = resolve_llm_config(
             args.provider, args.model, args.llm_base, args.api_key
         )
     except ProviderError as exc:
@@ -129,19 +135,26 @@ def do_run(args):
         sys.exit(1)
 
     if args.llm_base is None:
-        print(f"[Provider] {args.provider or 'default'} -> {model} @ {llm_base}")
+        print(
+            f"[Provider] {args.provider or 'default'} "
+            f"({provider_cfg.provider_type or 'auto'}) -> {provider_cfg.model} "
+            f"@ {provider_cfg.api_base_url}"
+        )
 
     resolver = build_resolver(
         _effective_permission_mode(args, interactive=False), scope="session"
     )
     agent = agent_cls(
-        model=model,
-        llm_base=llm_base,
+        model=provider_cfg.model,
+        llm_base=provider_cfg.api_base_url,
         max_turns=args.max_turns,
         resume_session=session_id,
         session_name=args.session_name,
-        api_key=api_key,
+        api_key=provider_cfg.api_key,
         permission_resolver=resolver,
+        provider_type=provider_cfg.provider_type,
+        max_tokens=args.max_output_tokens or provider_cfg.max_tokens,
+        reasoning_effort=args.reasoning_effort or provider_cfg.reasoning_effort,
     )
 
     try:
@@ -229,6 +242,21 @@ def build_parser() -> argparse.ArgumentParser:
             "--api-key", default=None, help="Override API key (bypasses providers.json)"
         )
         p.add_argument("--max-turns", type=int, default=10, help="Max tool-call rounds")
+        p.add_argument(
+            "--max-output-tokens",
+            type=int,
+            default=None,
+            help=(
+                "Output token budget (mapped per provider; OpenAI uses "
+                "max_completion_tokens, Anthropic requires max_tokens)"
+            ),
+        )
+        p.add_argument(
+            "--reasoning-effort",
+            choices=("none", "minimal", "low", "medium", "high", "xhigh", "max"),
+            default=None,
+            help="Reasoning/thinking effort (provider-specific mapping)",
+        )
         p.add_argument(
             "--resume-session", type=int, help="Resume an existing session by ID"
         )
@@ -351,6 +379,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main():
+    configure_console()
     parser = build_parser()
 
     # Backward compatibility: if no subcommand is given and --agent is used,

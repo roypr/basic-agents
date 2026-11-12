@@ -1,11 +1,11 @@
 """Provider configuration loader.
 
 Reads ``providers.json`` from the project root and resolves a provider+model
-into ``(api_base_url, api_key, model)`` for use with the LLM client.
+into a :class:`ProviderConfig` for use with the LLM client.
 
-The config is intentionally lightweight — no router, fallback, or transformer
-logic. It is loaded dynamically at runtime and is never persisted to the
-session database.
+The config is intentionally lightweight — no router or fallback logic.  It is
+loaded dynamically at runtime and is never persisted to the session database.
+Provider-specific wire translation lives in :mod:`utils.llm`.
 """
 
 from __future__ import annotations
@@ -25,6 +25,13 @@ class ProviderConfig:
     api_base_url: str
     api_key: str
     model: str
+    # "openai" | "deepseek" | "openrouter" | "anthropic" | custom name.
+    # Empty means infer from name/base URL/model in the adapter registry.
+    provider_type: str = ""
+    # Provider-neutral output budget. Anthropic always requires one; other
+    # providers use their own field name internally.
+    max_tokens: int | None = None
+    reasoning_effort: str | None = None
 
 
 class ProviderError(ValueError):
@@ -110,4 +117,7 @@ def resolve_provider(
         api_base_url=selected["api_base_url"],
         api_key=selected.get("api_key", ""),
         model=model_name,
+        provider_type=selected.get("type") or selected["name"],
+        max_tokens=selected.get("max_output_tokens", selected.get("max_tokens")),
+        reasoning_effort=selected.get("reasoning_effort"),
     )

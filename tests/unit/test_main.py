@@ -47,3 +47,17 @@ class TestParserPermissionFlags:
     def test_invalid_mode_rejected(self):
         with pytest.raises(SystemExit):
             self._parse(["chat", "--permission-mode", "nonsense"])
+
+    def test_generation_flags_parse(self):
+        args = self._parse(
+            [
+                "run",
+                "--max-output-tokens",
+                "4096",
+                "--reasoning-effort",
+                "high",
+            ]
+        )
+
+        assert args.max_output_tokens == 4096
+        assert args.reasoning_effort == "high"
