@@ -159,11 +159,13 @@ def _file_edit(path: str, new_str: str, old_str: str = None):
 
     with open(abs_path, "r", encoding="utf-8") as f:
         original = f.read()
-    if old_str is None or old_str not in original:
-        if original and not original.endswith("\n"):
-            updated = original + "\n" + new_str
-        else:
-            updated = original + new_str
+    if old_str is None:
+        separator = "" if not original or original.endswith("\n") else "\n"
+        updated = original + separator + new_str
+    elif old_str not in original:
+        raise ValueError("old_str not found in file (no changes made)")
+    elif original.count(old_str) > 1:
+        raise ValueError("old_str matches multiple places; add more context")
     else:
         updated = original.replace(old_str, new_str, 1)
     with open(abs_path, "w", encoding="utf-8") as f:
@@ -215,21 +217,42 @@ def _replace_lines(
     if end_line is None:
         if start_line < 1 or start_line > total_lines:
             raise ValueError(f"start_line {start_line} out of range (1–{total_lines})")
-        result = lines[: start_line - 1] + new_lines + lines[start_line:]  # ← fixed
+        end_line = start_line
         action = f"Replaced line {start_line} in"
     else:
-        end_line = min(end_line, total_lines)
-        if start_line < 1 or end_line < 1 or start_line > end_line:
-            raise ValueError(f"Invalid line range {start_line}-{end_line}")
-        result = lines[: start_line - 1] + new_lines + lines[end_line:]
         action = f"Replaced lines {start_line}-{end_line} in"
+
+    if start_line < 1 or end_line < 1 or start_line > end_line:
+        raise ValueError(f"Invalid line range {start_line}-{end_line}")
+    if end_line > total_lines:
+        raise ValueError(
+            f"end_line {end_line} exceeds file length ({total_lines} lines)"
+        )
+
+    removed_lines = lines[start_line - 1 : end_line]
+    result = lines[: start_line - 1] + new_lines + lines[end_line:]
 
     with open(abs_path, "w", encoding="utf-8") as f:
         f.write("".join(result))
 
     new_line_count = len(new_lines)
     total_after = len(result)
-    return f"{action} {path} ({new_line_count} lines written, file now {total_after} lines)"
+    removed_preview = "".join(
+        f"{line_number}: {line}"
+        for line_number, line in enumerate(removed_lines[:5], start=start_line)
+    )
+    if len(removed_lines) > 5:
+        removed_preview += "...\n"
+    start = max(0, start_line - 3)
+    end = min(len(result), start_line - 1 + new_line_count + 2)
+    preview = "".join(
+        f"{i + 1}: {line}" for i, line in enumerate(result[start:end], start=start)
+    )
+    return (
+        f"{action} {path} ({new_line_count} lines written, file now {total_after} lines)"
+        f"\n--- removed (first 5 lines) ---\n{removed_preview}"
+        f"\n--- result ---\n{preview}"
+    )
 
 
 def _remove_lines(path: str, start_line: int, end_line: int = None) -> str:

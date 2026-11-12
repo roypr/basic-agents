@@ -146,25 +146,7 @@ def check_syntax(abs_path: str, language: str) -> str | None:
         if shutil.which("ruff"):
             project_dir = find_project_dir(abs_path, PYTHON_MARKERS)
 
-            # Auto-fix what we can first
-            subprocess.run(
-                f"ruff check --fix {abs_path}",
-                capture_output=True,
-                shell=True,
-                cwd=project_dir,
-                text=True,
-                timeout=15,
-            )
-            subprocess.run(
-                f"ruff format {abs_path}",
-                capture_output=True,
-                shell=True,
-                cwd=project_dir,
-                text=True,
-                timeout=15,
-            )
-
-            # Now check for remaining issues
+            # Lint and format checks must not modify files during an edit.
             result = subprocess.run(
                 f"ruff check {abs_path}",
                 capture_output=True,
@@ -297,6 +279,7 @@ def syntax_check_file(rel_path: str) -> str | None:
         return f"Syntax check timed out for {rel_path}"
     except Exception as e:
         return f"Syntax check failed: {e}"
+
 
 def tree_sitter_tags(path: str) -> str:
     """
@@ -434,16 +417,11 @@ tools = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "path": {
-                        "type": "string",
-                        "description": "Relative file path"
-                    }
+                    "path": {"type": "string", "description": "Relative file path"}
                 },
-                "required": [
-                    "path"
-                ]
-            }
-        }
+                "required": ["path"],
+            },
+        },
     },
     {
         "type": "function",
@@ -464,7 +442,7 @@ tools = [
         "type": "function",
         "function": {
             "name": "file_edit",
-            "description": "Edit text inside a file, replace_lines preferred over this. For Py, JS, TS, PHP files it will run quick syntax check",
+            "description": "Edit text inside a file using a unique old_str anchor when replacing existing text. If old_str is omitted, new_str is appended. A missing or ambiguous old_str is an error. For Py, JS, TS, PHP files it will run quick syntax check",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -494,7 +472,7 @@ tools = [
                     },
                     "end_line": {
                         "type": "integer",
-                        "description": "Ending line number. None to replace only start_line",
+                        "description": "Ending line number; omitted to replace only start_line",
                     },
                 },
                 "required": ["path", "start_line"],
@@ -505,7 +483,7 @@ tools = [
         "type": "function",
         "function": {
             "name": "replace_lines",
-            "description": "Insert at perticular line of a file or replace a range of lines in a file. For Py, JS, TS, PHP files it will run quick syntax check",
+            "description": "Replaces lines start_line..end_line inclusive (end_line defaults to start_line). To insert before line N, replace line N with your new text plus the original line N. Do not repeat lines outside the replaced range. Line numbers shift after every edit, so re-read the file before each edit. Provide replacement text in the new_content argument (not new_str or content). For Py, JS, TS, PHP files it will run quick syntax check",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -520,7 +498,7 @@ tools = [
                     },
                     "new_content": {
                         "type": "string",
-                        "description": "Replacement text",
+                        "description": "Replacement text (required argument name; not new_str or content)",
                     },
                 },
                 "required": ["path", "start_line", "new_content"],

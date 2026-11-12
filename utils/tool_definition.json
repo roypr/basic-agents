@@ -154,7 +154,7 @@
         "type": "function",
         "function": {
             "name": "replace_lines",
-            "description": "Insert at perticular line of a file or replace a range of lines in a file.",
+            "description": "Replaces lines start_line..end_line inclusive (end_line defaults to start_line). To insert before line N, replace line N with your new text plus the original line N. Do not repeat lines outside the replaced range. Line numbers shift after every edit, so re-read the file before each edit. Provide replacement text in the new_content argument.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -172,7 +172,7 @@
                     },
                     "new_content": {
                         "type": "string",
-                        "description": "Replacement text"
+                        "description": "Replacement text (required argument name; not new_str or content)"
                     }
                 },
                 "required": [
@@ -230,7 +230,7 @@
         "type": "function",
         "function": {
             "name": "file_edit",
-            "description": "Edit text inside a file, replace_lines preferred over this.",
+            "description": "Edit text inside a file using a unique old_str anchor when replacing existing text. If old_str is omitted, new_str is appended. A missing or ambiguous old_str is an error.",
             "parameters": {
                 "type": "object",
                 "properties": {

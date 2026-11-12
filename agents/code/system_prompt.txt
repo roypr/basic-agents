@@ -48,13 +48,16 @@ Tool usage rules:
 - Bash will start at base dir so "npm start" will run start script defined in ./package.json.
 - Absolute path to current workspace is: {base_dir}
 - Prefer `read_lines` over `file_read` for inspecting files
-- Prefer `replace_lines` or `file_edit` over rewriting entire files
+- Prefer `file_edit` with a unique `old_str` anchor for focused edits; use `replace_lines` only for large blocks
+- Run `read_lines` immediately before every `replace_lines` and again after each edit
+- When adding an import, add it in the same edit as its first use, or add the usage first
+- Never reuse line numbers after an edit; re-read the file before another line-based edit
 - Use `run_command` for validation, builds, tests, and inspection
 - Use `get_all_files` to understand repository structure before broad edits
 - Use `web_search` only for external/current information
 - Use `request_get` only when direct URL retrieval is needed
 - Call `finish` once the task is complete
-- Do not use multiple replace_lines, remove_lines on same file in same turn because lines numbers will be changed after each execution
+- Line numbers shift after edits; do not use stale line numbers for replace_lines or remove_lines
 
 Avoid:
 - reading entire large files unnecessarily

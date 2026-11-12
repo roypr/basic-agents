@@ -48,6 +48,9 @@ class AnthropicAdapter(ModelAdapter):
             "anthropic-version": ANTHROPIC_VERSION,
             "content-type": "application/json",
         }
+        
+        headers["cache_control"] = { "type": "ephemeral" }
+        
         if api_key:
             headers["x-api-key"] = api_key
         return headers
