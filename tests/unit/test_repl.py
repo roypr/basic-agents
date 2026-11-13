@@ -4,6 +4,7 @@ from types import SimpleNamespace
 import pytest
 
 from cli.repl import Repl, run_repl
+from utils.llm_client import LLMError
 
 
 class _ScriptedInput:
@@ -61,6 +62,14 @@ def _fake_agent_cls(created):
                 raise KeyboardInterrupt
             if query == "boom":
                 raise RuntimeError("kaboom")
+            if query == "llm-error":
+                raise LLMError(
+                    "Missing Authentication header",
+                    kind="auth",
+                    provider="kimi",
+                    model="kimi-k2",
+                    status_code=401,
+                )
             self.session_id = 99
 
         def shutdown(self):
@@ -135,6 +144,20 @@ class TestReplTurns:
 
         assert repl.agent.run_calls == ["boom", "after"]
         assert any("failed" in line.lower() for line in out)
+
+    def test_llm_error_is_rendered_and_repl_continues(self, monkeypatch):
+        created, out = [], []
+        repl = _repl(["llm-error", "after", "/quit"], created, monkeypatch, out)
+
+        repl.run()
+
+        assert repl.agent.run_calls == ["llm-error", "after"]
+        rendered = "\n".join(out)
+        assert "[LLM error] kimi/kimi-k2" in rendered
+        assert "authentication failed" in rendered
+        assert "Missing Authentication header" in rendered
+        # A provider failure must not leak a traceback or kill the loop.
+        assert "Traceback" not in rendered
 
     def test_eof_shuts_down_once(self, monkeypatch):
         created, out = [], []
@@ -553,3 +576,67 @@ class TestReplAttachmentCommands:
 
         # /session is not a turn, so the file still rides on the first prompt.
         assert repl.agent.run_calls == ["real question\n\n" + repl._include_block]
+
+
+@pytest.mark.unit
+class TestMcpCommand:
+    def _repl_with_mcp(self, created, monkeypatch, out, enabled=True, lines=None):
+        repl = _repl(["/mcp", "/quit"], created, monkeypatch, out)
+        repl._instantiate()
+        repl.agent.mcp = SimpleNamespace(
+            enabled=enabled,
+            report_lines=lambda: list(lines or []),
+        )
+        return repl
+
+    def test_status_reports_tool_counts(self, monkeypatch):
+        created, out = [], []
+        repl = self._repl_with_mcp(
+            created, monkeypatch, out, lines=["[MCP] 2 tools from fs (2 tools)"]
+        )
+
+        repl._handle_command("/mcp")
+
+        assert any("[MCP] 2 tools from fs" in line for line in out)
+
+    def test_status_when_disabled(self, monkeypatch):
+        created, out = [], []
+        repl = self._repl_with_mcp(created, monkeypatch, out, enabled=False)
+
+        repl._handle_command("/mcp")
+
+        assert any("MCP is disabled" in line for line in out)
+
+    def test_reconnect_all_closes_connections(self, monkeypatch):
+        created, out = [], []
+        calls = []
+        monkeypatch.setattr(
+            "utils.mcp.close_mcp_servers", lambda: calls.append("all")
+        )
+        repl = self._repl_with_mcp(created, monkeypatch, out, lines=["[MCP] ok"])
+
+        repl._handle_command("/mcp reconnect")
+
+        assert calls == ["all"]
+        assert any("reconnected all MCP servers" in line for line in out)
+
+    def test_reconnect_one_server(self, monkeypatch):
+        created, out = [], []
+        calls = []
+        monkeypatch.setattr(
+            "utils.mcp.close_mcp_server", lambda name: calls.append(name) or True
+        )
+        repl = self._repl_with_mcp(created, monkeypatch, out, lines=["[MCP] ok"])
+
+        repl._handle_command("/mcp reconnect fs")
+
+        assert calls == ["fs"]
+        assert any("reconnected 'fs'" in line for line in out)
+
+    def test_help_mentions_mcp(self, monkeypatch):
+        created, out = [], []
+        repl = _repl(["/quit"], created, monkeypatch, out)
+
+        repl._handle_command("/help")
+
+        assert any("/mcp" in line for line in out)

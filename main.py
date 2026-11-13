@@ -7,6 +7,14 @@ from pathlib import Path
 from cli.resolver import build_resolver
 from utils.console import configure_console
 from utils.file_utils import build_query, encode_image_base64, parse_line_range
+from utils.llm_client import LLMError, render_error
+from utils.mcp import (
+    McpConfig,
+    McpError,
+    close_mcp_servers,
+    describe_servers,
+    load_mcp_config,
+)
 from utils.provider_config import ProviderConfig, ProviderError, resolve_provider
 
 
@@ -42,6 +50,18 @@ def resolve_llm_config(provider, model, llm_base, api_key):
             provider_type=provider or "",
         )
     return resolve_provider(provider, model)
+
+
+def resolve_mcp_config(args):
+    """Resolve ``--mcp-config`` / ``--no-mcp`` into an ``McpConfig``.
+
+    ``None`` means "use the default mcp.json if present"; an explicit path that
+    does not exist raises ``McpConfigError`` (a typo must not silently disable
+    MCP). ``--no-mcp`` returns an explicitly disabled config.
+    """
+    if getattr(args, "no_mcp", False):
+        return McpConfig(enabled=False)
+    return load_mcp_config(getattr(args, "mcp_config", None))
 
 
 def resolve_resume_session(args):
@@ -144,24 +164,37 @@ def do_run(args):
     resolver = build_resolver(
         _effective_permission_mode(args, interactive=False), scope="session"
     )
-    agent = agent_cls(
-        model=provider_cfg.model,
-        llm_base=provider_cfg.api_base_url,
-        max_turns=args.max_turns,
-        resume_session=session_id,
-        session_name=args.session_name,
-        api_key=provider_cfg.api_key,
-        permission_resolver=resolver,
-        provider_type=provider_cfg.provider_type,
-        max_tokens=args.max_output_tokens or provider_cfg.max_tokens,
-        reasoning_effort=args.reasoning_effort or provider_cfg.reasoning_effort,
-    )
+    try:
+        mcp_config = resolve_mcp_config(args)
+        agent = agent_cls(
+            model=provider_cfg.model,
+            llm_base=provider_cfg.api_base_url,
+            max_turns=args.max_turns,
+            resume_session=session_id,
+            session_name=args.session_name,
+            api_key=provider_cfg.api_key,
+            permission_resolver=resolver,
+            provider_type=provider_cfg.provider_type,
+            max_tokens=args.max_output_tokens or provider_cfg.max_tokens,
+            reasoning_effort=args.reasoning_effort or provider_cfg.reasoning_effort,
+            mcp_config=mcp_config,
+        )
+    except McpError as exc:
+        # Config / required-server failures are startup problems: explain them
+        # instead of dumping a traceback.
+        print(exc.render())
+        sys.exit(1)
 
     try:
         agent.run(combined_query, image_data=image_data)
     except KeyboardInterrupt:
         print("\nInterrupted by user. Shutting down gracefully...")
         sys.exit(0)
+    except LLMError as exc:
+        # One-shot run: show the actionable form and fail with a non-zero code
+        # instead of dumping a traceback. The raw body is already in the log.
+        print(render_error(exc))
+        sys.exit(1)
     finally:
         agent.shutdown()
 
@@ -206,6 +239,46 @@ def do_session(args):
     else:
         print("Unknown session command. Available: create, list, get, delete, compress")
         sys.exit(1)
+
+
+def do_mcp(args):
+    """Handle the 'mcp' subcommand: list configured servers and their tools."""
+    if getattr(args, "mcp_command", None) != "list":
+        print("Unknown mcp command. Available: list")
+        sys.exit(1)
+
+    try:
+        config = resolve_mcp_config(args)
+    except McpError as exc:
+        print(exc.render())
+        sys.exit(1)
+
+    if not config.enabled:
+        print("[MCP] No MCP servers configured (create mcp.json).")
+        return
+
+    try:
+        rows = describe_servers(config)
+    except McpError as exc:  # defensive: describe_servers reports per server
+        print(exc.render())
+        sys.exit(1)
+    finally:
+        close_mcp_servers()
+
+    for row in rows:
+        if row["error"] is not None:
+            print(row["error"].render())
+            continue
+        extras = []
+        if row["resources"]:
+            extras.append("resources")
+        if row["prompts"]:
+            extras.append("prompts")
+        suffix = f" [{', '.join(extras)}]" if extras else ""
+        print(
+            f"[{row['name']}] {row['transport']} -> {row['target']} "
+            f"({row['tools']} tools, agents: {row['agents']}){suffix}"
+        )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -270,6 +343,16 @@ def build_parser() -> argparse.ArgumentParser:
             "--session-name", default="Default Session", help="Name for the session"
         )
         p.add_argument(
+            "--mcp-config",
+            default=None,
+            help="Path to mcp.json (default: ./mcp.json when present)",
+        )
+        p.add_argument(
+            "--no-mcp",
+            action="store_true",
+            help="Disable MCP tool servers for this run",
+        )
+        p.add_argument(
             "--permission-mode",
             choices=("allow", "deny", "ask"),
             default=None,
@@ -324,6 +407,21 @@ def build_parser() -> argparse.ArgumentParser:
         "--lines",
         default=None,
         help="Optional line range to include from --include, e.g. 10-20 or 20",
+    )
+
+    # --- mcp subcommand ---
+    mcp_parser = subparsers.add_parser("mcp", help="Inspect MCP servers")
+    mcp_subparsers = mcp_parser.add_subparsers(dest="mcp_command")
+    mcp_list_parser = mcp_subparsers.add_parser(
+        "list", help="Connect to configured servers and list their tools"
+    )
+    mcp_list_parser.add_argument(
+        "--mcp-config",
+        default=None,
+        help="Path to mcp.json (default: ./mcp.json when present)",
+    )
+    mcp_list_parser.add_argument(
+        "--no-mcp", action="store_true", help="Disable MCP tool servers"
     )
 
     # --- session subcommand ---
@@ -384,7 +482,7 @@ def main():
 
     # Backward compatibility: if no subcommand is given and --agent is used,
     # default to 'run' subcommand
-    if len(sys.argv) > 1 and sys.argv[1] in ("run", "session", "chat"):
+    if len(sys.argv) > 1 and sys.argv[1] in ("run", "session", "chat", "mcp"):
         args = parser.parse_args()
     else:
         # Default to 'run' subcommand
@@ -395,6 +493,8 @@ def main():
         do_run(args)
     elif args.command == "session":
         do_session(args)
+    elif args.command == "mcp":
+        do_mcp(args)
     elif args.command == "chat":
         exit_code = do_chat(args)
         if exit_code:

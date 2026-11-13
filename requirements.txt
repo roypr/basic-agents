@@ -3,3 +3,5 @@ ddgs
 beautifulsoup4
 html2text
 ruff
+# Optional: MCP tool servers (https://modelcontextprotocol.io). Lazy-imported.
+mcp>=1.2,<3

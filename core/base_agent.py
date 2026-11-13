@@ -1,10 +1,12 @@
 import json
 import logging
 from db.session_db import SessionDB
-from core.permissions import AutoAllowResolver, PermissionPolicy
+from core.permissions import SAFE_TOOLS, AutoAllowResolver, PermissionPolicy
 from core.rule_store import InMemoryRuleStore
 from utils.http_utils import close_request_session
 from utils.llm_client import call_llm_streaming, get_adapter
+from utils.logging_setup import configure_error_logging
+from utils.mcp import McpConfig, McpToolProvider, close_mcp_servers
 from utils.session_manager import init_session_db
 from utils.tool_executor import execute_tool_calls, shutdown_tool_executor
 
@@ -19,12 +21,7 @@ ORPHANED_TOOL_RESULT = (
 )
 
 
-logging.basicConfig(
-    filename="logs/app_errors.log",
-    filemode="a",  # 'a' appends data, 'w' overwrites the file each run
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    level=logging.ERROR,
-)
+configure_error_logging()
 
 
 class BaseAgent:
@@ -44,6 +41,7 @@ class BaseAgent:
         provider_type: str | None = None,
         max_tokens: int | None = None,
         reasoning_effort: str | None = None,
+        mcp_config: McpConfig | None = None,
     ):
         self.name = name
         self.model = model
@@ -66,16 +64,30 @@ class BaseAgent:
             model, provider_name=self.provider_type, api_base_url=llm_base
         )
         self.session_db = SessionDB()
-        self.tools = self.get_tools()
-        self.tool_map = self.get_tool_map()
+        # Copy: get_tools()/get_tool_map() return module-level shared objects,
+        # and MCP tools are appended per agent instance.
+        self.tools = list(self.get_tools())
+        self.tool_map = dict(self.get_tool_map())
         self.system_prompt = self.resolve_system_prompt()
+
+        # Optional MCP servers extend this agent's tool surface. Namespaced
+        # (mcp__server__tool) OpenAI function schemas work unchanged with every
+        # provider adapter. New tools default to ASK in the permission gate.
+        self.mcp = McpToolProvider(agent_name=self._agent_dir_name(), config=mcp_config)
+        if self.mcp.tools:
+            self.tools = self.tools + self.mcp.tools
+            self.tool_map = {**self.tool_map, **self.mcp.tool_map}
+        for line in self.mcp.report_lines():
+            print(line)
 
         # Per-agent policy: grading is scoped to the tools this agent exposes.
         # Default resolver keeps one-shot `run` behavior backward compatible.
+        # ``mcp.json -> safe_tools`` can pre-approve individual MCP tools.
         self.permission_policy = permission_policy or PermissionPolicy(
             agent_tool_names=self.tool_map.keys(),
             rule_store=InMemoryRuleStore(),
             resolver=permission_resolver or AutoAllowResolver(),
+            safe_tools=set(SAFE_TOOLS) | self.mcp.safe_tool_names,
         )
 
     def resolve_system_prompt(self) -> str:
@@ -425,5 +437,8 @@ class BaseAgent:
         if self._shutdown_requested:
             return
         self._shutdown_requested = True
+        # MCP connections are process-wide (shared across REPL agent
+        # re-instantiation), so they are closed here, exactly once.
+        close_mcp_servers()
         close_request_session()
         shutdown_tool_executor()

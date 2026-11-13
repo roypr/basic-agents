@@ -1,3 +1,5 @@
+import os
+
 import pytest
 import tempfile
 from unittest.mock import Mock
@@ -5,6 +7,25 @@ from dotenv import load_dotenv
 
 # Load environment variables for testing
 load_dotenv()
+
+
+@pytest.fixture(autouse=True)
+def _disable_mcp():
+    """Keep the suite hermetic: never spawn real MCP servers.
+
+    A developer with a local ``mcp.json`` would otherwise launch ``npx`` (or
+    worse) in every agent-construction test. Individual tests opt back in by
+    passing an explicit ``McpConfig`` and monkeypatching the connection layer.
+    """
+    previous = os.environ.get("BASIC_AGENTS_NO_MCP")
+    os.environ["BASIC_AGENTS_NO_MCP"] = "1"
+    try:
+        yield
+    finally:
+        if previous is None:
+            os.environ.pop("BASIC_AGENTS_NO_MCP", None)
+        else:
+            os.environ["BASIC_AGENTS_NO_MCP"] = previous
 
 
 @pytest.fixture
