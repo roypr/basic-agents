@@ -315,7 +315,7 @@ def run_command(command: str, timeout: int = 30) -> str:
     except Exception as e:
         result = f"Error running command: {e}"
 
-    safe_print(f"[Tool: Run Command] {command} \n {result}")
+    safe_print(f"[Tool: Run Command] {command}")
     return result
 
 
@@ -399,5 +399,5 @@ def grep_search(
     except Exception as e:
         result = f"Error running grep search: {e}"  # ← match run_command
 
-    safe_print(f"[Tool: Grep] {result}")
+    safe_print(f"[Tool: Grep] Pattern: {pattern} Path: {path}")
     return result
