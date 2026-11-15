@@ -297,7 +297,7 @@ def tree_sitter_tags(path: str) -> str:
     command = f'tree-sitter tags "{path}"'
     result = run_command(command, timeout=30)
 
-    safe_print(f"[Tool: Tree-sitter Tags] {path}")
+    # safe_print(f"[Tool: Tree-sitter Tags] {path}")
     return result
 
 
