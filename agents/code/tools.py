@@ -398,6 +398,7 @@ def replace_lines(
 all_tools = load_tool_definition()
 
 tools = [
+    all_tools["get_current_date"],
     all_tools["glob_search"],
     all_tools["grep_search"],
     all_tools["web_search"],

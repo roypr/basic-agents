@@ -1,4 +1,4 @@
-from utils.tools_library import (glob_search, grep_search, 
+from utils.tools_library import (get_current_date, glob_search, grep_search, 
                                  file_write, file_read, file_edit, get_all_files, 
                                  read_lines, remove_lines, replace_lines, 
                                  web_search, request_get, finish)
@@ -7,6 +7,7 @@ from utils.file_utils import load_tool_definition
 all_tools = load_tool_definition()
 
 tools = [
+    all_tools["get_current_date"],
     all_tools["glob_search"],
     all_tools["grep_search"],
     all_tools["web_search"],
@@ -22,6 +23,7 @@ tools = [
 ]
 
 TOOL_MAP = {
+    "get_current_date" : get_current_date,
     "glob_search" : glob_search,
     "grep_search" : grep_search,
     "web_search": web_search,
