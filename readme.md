@@ -396,6 +396,19 @@ Model endpoints are configured in `providers.json` at the project root. Each pro
 - **`providers[].max_tokens`** — provider-neutral output budget (Anthropic defaults to `8192` because the field is required).
 - **`providers[].reasoning_effort`** — default reasoning effort; `--reasoning-effort` overrides it.
 
+Anthropic **prompt caching** is enabled by default. Each request marks three breakpoints with
+`cache_control: {"type": "ephemeral"}`: the last tool definition, the system prompt, and the newest
+message block. The API caches prompts in `tools` → `system` → `messages` order, so tool definitions
+and instructions stay cached between turns while the message marker moves forward with the growing
+history. This costs nothing extra beyond the normal cache-write premium (25% for the default
+5-minute TTL) and makes long agent runs substantially cheaper; prompts shorter than the model's
+minimum cacheable length (512–4,096 tokens depending on model) are sent uncached with no error.
+Cache reads and writes are reported in `usage` on the returned message (`cache_read_input_tokens`,
+`cache_creation_input_tokens`, `input_tokens`). Callers can opt out per request with
+`prompt_cache=False` in `call_llm_streaming`, or switch to the 1-hour TTL with
+`prompt_cache_ttl="1h"`; the one-shot summarizer already opts out because it never re-reads its
+prefix.
+
 Provider-specific reasoning history is preserved automatically: DeepSeek `reasoning_content` (when tools are present), OpenRouter `reasoning_details`, Anthropic signed `thinking` blocks, and OpenAI Responses `reasoning` items (replayed with their `encrypted_content`) survive a session resume. Reasoning is not sent to providers that do not accept it.
 
 A `providers.example.json` template is included. Copy it to get started:

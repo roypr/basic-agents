@@ -114,6 +114,12 @@ class LLMOptions:
     reasoning_effort: str | None = None
     temperature: float | None = None
     top_p: float | None = None
+    # Prompt caching is Anthropic-only.  ``None`` keeps the adapter default
+    # (enabled), while ``False`` sends the request without cache breakpoints.
+    # ``prompt_cache_ttl`` is ``"5m"`` (default) or ``"1h"`` — the latter costs
+    # more per cache write but survives longer pauses between turns.
+    prompt_cache: bool | None = None
+    prompt_cache_ttl: str | None = None
     extra: dict = field(default_factory=dict)
 
 

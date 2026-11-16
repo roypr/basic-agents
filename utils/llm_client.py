@@ -152,6 +152,8 @@ def call_llm_streaming(
     top_p: float | None = None,
     extra: dict | None = None,
     provider_type: str | None = None,
+    prompt_cache: bool | None = None,
+    prompt_cache_ttl: str | None = None,
 ) -> dict:
     """Stream one completion and return the canonical assistant message.
 
@@ -159,6 +161,9 @@ def call_llm_streaming(
     to the field its API currently expects.  Only explicitly supplied sampling
     parameters are sent, so reasoning models are not forced onto unsupported
     values.
+
+    ``prompt_cache`` / ``prompt_cache_ttl`` are Anthropic-only hints: leaving
+    both unset keeps the adapter default (caching on, 5-minute TTL).
 
     Raises:
         LLMError: for any provider, transport or streaming failure.  The raw
@@ -173,6 +178,8 @@ def call_llm_streaming(
         temperature=temperature,
         top_p=top_p,
         extra=dict(extra or {}),
+        prompt_cache=prompt_cache,
+        prompt_cache_ttl=prompt_cache_ttl,
     )
 
     payload = adapter.build_payload(

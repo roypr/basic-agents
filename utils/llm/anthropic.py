@@ -4,11 +4,16 @@ The Messages API is not an OpenAI shim: it uses ``x-api-key`` auth, a top-level
 ``system`` prompt, required ``max_tokens``, flat tool schemas, ``tool_use`` /
 ``tool_result`` content blocks, and a typed SSE event stream.  This adapter
 owns all of that translation so the agent loop can stay provider-neutral.
+
+Prompt caching is applied here too: ``cache_control`` breakpoints on the last
+tool definition, the system prompt and the newest message let follow-up turns
+read the previous prefix instead of paying for it again.
 """
 
 from __future__ import annotations
 
 import json
+import logging
 
 from .base import (
     LLMOptions,
@@ -20,8 +25,17 @@ from .base import (
 )
 from .errors import stream_error
 
+logger = logging.getLogger("basic_agents")
+
 ANTHROPIC_VERSION = "2023-06-01"
 DEFAULT_MAX_TOKENS = 8192
+
+# `cache_control` is only valid on cacheable block types.  Thinking blocks and
+# empty text blocks are rejected by the API, so breakpoints skip them.
+CACHEABLE_BLOCK_TYPES = frozenset(
+    {"text", "image", "document", "tool_use", "tool_result"}
+)
+
 
 # Anthropic supports low/medium/high/xhigh/max.  ``minimal`` has no direct
 # equivalent; low is the closest documented level.
@@ -44,13 +58,12 @@ class AnthropicAdapter(ModelAdapter):
         return f"{base}/v1/messages"
 
     def headers(self, api_key: str) -> dict:
+        # `cache_control` is a request-body field, not a header; sending it here
+        # would be ignored at best and rejected by a strict proxy at worst.
         headers = {
             "anthropic-version": ANTHROPIC_VERSION,
             "content-type": "application/json",
         }
-        
-        headers["cache_control"] = { "type": "ephemeral" }
-        
         if api_key:
             headers["x-api-key"] = api_key
         return headers
@@ -96,7 +109,94 @@ class AnthropicAdapter(ModelAdapter):
             payload["top_p"] = options.top_p
         if options.extra:
             payload.update(options.extra)
+        if options.prompt_cache is not False:
+            self._apply_prompt_cache(payload, options)
         return payload
+
+    # ---------------------------------------------------------------- caching
+    @staticmethod
+    def _cache_marker(options: LLMOptions) -> dict:
+        """The `cache_control` value shared by every breakpoint in a request."""
+        marker: dict = {"type": "ephemeral"}
+        ttl = str(options.prompt_cache_ttl or "").strip().lower()
+        if ttl in ("", "5m"):
+            return marker
+        if ttl == "1h":
+            marker["ttl"] = "1h"
+            return marker
+        logger.warning(
+            "Unknown prompt cache TTL %r; using the default 5 minutes",
+            options.prompt_cache_ttl,
+        )
+        return marker
+
+    def _apply_prompt_cache(self, payload: dict, options: LLMOptions) -> None:
+        """Mark the prefixes a follow-up turn can reuse.
+
+        The API caches everything from the start of the prompt up to each
+        ``cache_control`` marker, in ``tools`` -> ``system`` -> ``messages``
+        order.  Marking the last tool definition, the system prompt and the
+        newest message therefore covers the three prefixes an agent turn
+        repeats.  The message marker moves forward on its own because every
+        request marks its own last block, so the previous turn is read from
+        cache and only the new turn is written.
+
+        Prompts below the model's minimum cacheable length are processed
+        without caching; the API does not return an error, so no client-side
+        token estimate is attempted here.
+        """
+        if "cache_control" in payload:
+            # The caller manages caching itself: a top-level marker enables
+            # automatic caching, and `None` disables it.  Either way our
+            # block-level markers must not interfere.
+            return
+
+        marker = self._cache_marker(options)
+
+        # Three breakpoints, one below the API's limit of four: tools, system
+        # and messages (in cache-prefix order).
+        tools = payload.get("tools")
+        if tools:
+            tools[-1] = {**tools[-1], "cache_control": dict(marker)}
+
+        system = payload.get("system")
+        if isinstance(system, str):
+            payload["system"] = [
+                {"type": "text", "text": system, "cache_control": dict(marker)}
+            ]
+        elif isinstance(system, list) and system:
+            last = system[-1]
+            if isinstance(last, dict) and last.get("type") in CACHEABLE_BLOCK_TYPES:
+                system[-1] = {**last, "cache_control": dict(marker)}
+
+        messages = payload.get("messages") or []
+        if messages:
+            self._mark_message(messages[-1], marker)
+
+    @staticmethod
+    def _mark_message(message: dict, marker: dict) -> bool:
+        """Put a breakpoint on the last cacheable block of ``message``."""
+        content = message.get("content")
+        if isinstance(content, str):
+            if not content:
+                return False
+            message["content"] = [
+                {"type": "text", "text": content, "cache_control": dict(marker)}
+            ]
+            return True
+        if not isinstance(content, list):
+            return False
+
+        for block in reversed(content):
+            if not isinstance(block, dict):
+                continue
+            if block.get("type") not in CACHEABLE_BLOCK_TYPES:
+                continue
+            if block.get("type") == "text" and not block.get("text"):
+                continue
+            block["cache_control"] = dict(marker)
+            return True
+        return False
 
     def _convert_tools(self, tools: list) -> list:
         converted = []
@@ -294,6 +394,7 @@ class AnthropicAdapter(ModelAdapter):
         block_states: dict[int, dict] = {}
         role = "assistant"
         stop_reason = None
+        usage: dict = {}
 
         try:
             for event, data in iter_sse(response):
@@ -314,6 +415,7 @@ class AnthropicAdapter(ModelAdapter):
                 if event_type == "message_start":
                     message = obj.get("message") or {}
                     role = message.get("role", role)
+                    usage.update(message.get("usage") or {})
                     continue
 
                 if event_type == "content_block_start":
@@ -415,6 +517,9 @@ class AnthropicAdapter(ModelAdapter):
                 if event_type == "message_delta":
                     delta = obj.get("delta") or {}
                     stop_reason = delta.get("stop_reason") or stop_reason
+                    # Output tokens arrive here; input and cache counters were
+                    # already sent in message_start.
+                    usage.update(obj.get("usage") or {})
                     continue
 
                 if event_type == "message_stop":
@@ -431,4 +536,12 @@ class AnthropicAdapter(ModelAdapter):
             message["tool_calls"] = tool_calls
         if stop_reason:
             message["finish_reason"] = stop_reason
+        if usage:
+            message["usage"] = usage
+            logger.debug(
+                "Prompt cache: %s read, %s written, %s uncached input tokens",
+                usage.get("cache_read_input_tokens", 0),
+                usage.get("cache_creation_input_tokens", 0),
+                usage.get("input_tokens", 0),
+            )
         return message

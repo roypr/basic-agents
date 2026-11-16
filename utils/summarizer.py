@@ -98,6 +98,9 @@ def summarize_history(
         max_tokens=resolved_max_tokens,
         reasoning_effort=resolved_effort,
         provider_type=resolved_type,
+        # One-shot prompt: a cache write would only add the write premium,
+        # because no follow-up request ever reads this prefix.
+        prompt_cache=False,
     )
 
     return adapter.extract_content(result)

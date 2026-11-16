@@ -84,6 +84,25 @@ def _history():
     ]
 
 
+def _cache_markers(payload):
+    """Every block-level ``cache_control`` marker in a request payload."""
+    markers = []
+
+    def walk(value):
+        if isinstance(value, dict):
+            if isinstance(value.get("cache_control"), dict):
+                markers.append(value["cache_control"])
+            for child in value.values():
+                walk(child)
+        elif isinstance(value, list):
+            for child in value:
+                walk(child)
+
+    for section in ("tools", "system", "messages"):
+        walk(payload.get(section))
+    return markers
+
+
 @pytest.mark.unit
 class TestRegistry:
     def test_explicit_provider_wins(self):
@@ -301,7 +320,13 @@ class TestPayloads:
             options=LLMOptions(max_tokens=1024, reasoning_effort="high"),
         )
 
-        assert payload["system"] == "system prompt"
+        assert payload["system"] == [
+            {
+                "type": "text",
+                "text": "system prompt",
+                "cache_control": {"type": "ephemeral"},
+            }
+        ]
         assert payload["max_tokens"] == 1024
         assert payload["thinking"] == {"type": "adaptive", "display": "summarized"}
         assert payload["output_config"] == {"effort": "high"}
@@ -310,6 +335,8 @@ class TestPayloads:
                 "name": "lookup",
                 "description": "Look something up",
                 "input_schema": TOOLS[0]["function"]["parameters"],
+                # The last tool closes the cached tools prefix.
+                "cache_control": {"type": "ephemeral"},
             }
         ]
         # System is top-level, not a message.
@@ -324,11 +351,78 @@ class TestPayloads:
         assert assistant["content"][1] == {"type": "text", "text": "answer"}
         assert assistant["content"][2]["type"] == "tool_use"
         assert assistant["content"][2]["input"] == {"q": "x"}
-        # Tool results are packed into a single user message.
+        # Thinking blocks are not cacheable, so no marker is added to them.
+        assert all("cache_control" not in block for block in assistant["content"])
+        # Tool results are packed into a single user message; the newest block
+        # carries the moving conversation breakpoint.
         assert payload["messages"][2]["role"] == "user"
         assert payload["messages"][2]["content"] == [
-            {"type": "tool_result", "tool_use_id": "call_1", "content": "result"}
+            {
+                "type": "tool_result",
+                "tool_use_id": "call_1",
+                "content": "result",
+                "cache_control": {"type": "ephemeral"},
+            }
         ]
+
+    def test_anthropic_cache_breakpoints_stay_within_api_limit(self):
+        payload = AnthropicAdapter().build_payload(
+            _history(), "claude-opus-5-5", tools=TOOLS
+        )
+        assert len(_cache_markers(payload)) == 3
+        assert len(_cache_markers(payload)) <= 4
+
+    def test_anthropic_message_breakpoint_moves_with_history(self):
+        adapter = AnthropicAdapter()
+        first = adapter.build_payload(
+            [{"role": "user", "content": "one"}], "claude-opus-5-5"
+        )
+        assert first["messages"][-1]["content"][-1]["cache_control"]
+
+        # The next request must leave the first turn byte-identical so its
+        # cached prefix still matches; only the newest block is marked.
+        second = adapter.build_payload(
+            [
+                {"role": "user", "content": "one"},
+                {"role": "assistant", "content": "reply"},
+                {"role": "user", "content": "two"},
+            ],
+            "claude-opus-5-5",
+        )
+        assert "cache_control" not in second["messages"][0]["content"][0]
+        assert second["messages"][-1]["content"][-1]["cache_control"]
+
+    def test_anthropic_prompt_cache_can_be_disabled(self):
+        payload = AnthropicAdapter().build_payload(
+            _history(),
+            "claude-opus-5-5",
+            tools=TOOLS,
+            options=LLMOptions(prompt_cache=False),
+        )
+        assert "cache_control" not in json.dumps(payload)
+        assert payload["system"] == "system prompt"
+
+    def test_anthropic_prompt_cache_uses_one_hour_ttl(self):
+        payload = AnthropicAdapter().build_payload(
+            _history(),
+            "claude-opus-5-5",
+            tools=TOOLS,
+            options=LLMOptions(prompt_cache_ttl="1h"),
+        )
+        markers = _cache_markers(payload)
+        assert markers and all(marker["ttl"] == "1h" for marker in markers)
+
+    def test_anthropic_leaves_automatic_caching_alone(self):
+        # A top-level marker opts into server-side automatic caching; adding
+        # block-level markers on top would just consume breakpoint slots.
+        payload = AnthropicAdapter().build_payload(
+            _history(),
+            "claude-opus-5-5",
+            tools=TOOLS,
+            options=LLMOptions(extra={"cache_control": {"type": "ephemeral"}}),
+        )
+        assert payload["cache_control"] == {"type": "ephemeral"}
+        assert _cache_markers(payload) == []
 
     def test_anthropic_requires_max_tokens_and_headers(self):
         adapter = AnthropicAdapter()
@@ -338,6 +432,8 @@ class TestPayloads:
         assert headers["x-api-key"] == "secret"
         assert headers["anthropic-version"] == "2023-06-01"
         assert "Authorization" not in headers
+        # cache_control is a body field; it must never leak into the headers.
+        assert "cache_control" not in headers
 
     def test_endpoint_normalisation(self):
         adapter = OpenAIAdapter()
@@ -415,6 +511,30 @@ class TestCallLlmStreaming:
         assert captured["json"]["max_tokens"] == 256
         assert captured["json"]["output_config"] == {"effort": "medium"}
         assert result["content"] == "Hi"
+
+    def test_call_llm_streaming_threads_prompt_cache_options(self, monkeypatch):
+        captured = {}
+
+        class _Session:
+            def post(self, url, **kwargs):
+                captured.update(kwargs)
+                return _FakeResponse(_sse({"type": "message_stop"}))
+
+        monkeypatch.setattr(
+            "utils.llm_client.get_request_session",
+            lambda api_key="": _Session(),
+        )
+
+        call_llm_streaming(
+            [{"role": "user", "content": "hello"}],
+            model="claude-opus-5-5",
+            llm_base="https://api.anthropic.com",
+            api_key="secret",
+            adapter=AnthropicAdapter(),
+            prompt_cache=False,
+        )
+
+        assert "cache_control" not in json.dumps(captured["json"])
 
 
 @pytest.mark.unit
@@ -603,7 +723,18 @@ class TestStreamDecoders:
         events = [
             (
                 "message_start",
-                {"type": "message_start", "message": {"role": "assistant"}},
+                {
+                    "type": "message_start",
+                    "message": {
+                        "role": "assistant",
+                        "usage": {
+                            "input_tokens": 12,
+                            "cache_read_input_tokens": 2000,
+                            "cache_creation_input_tokens": 0,
+                            "output_tokens": 1,
+                        },
+                    },
+                },
             ),
             (
                 "content_block_start",
@@ -685,6 +816,7 @@ class TestStreamDecoders:
                 {
                     "type": "message_delta",
                     "delta": {"stop_reason": "tool_use"},
+                    "usage": {"output_tokens": 42},
                 },
             ),
             ("message_stop", {"type": "message_stop"}),
@@ -705,6 +837,14 @@ class TestStreamDecoders:
         ]
         assert message["tool_calls"][0]["function"]["arguments"] == '{"q": "x"}'
         assert message["finish_reason"] == "tool_use"
+        # Cache counters from message_start and output tokens from
+        # message_delta are merged into one usage record.
+        assert message["usage"] == {
+            "input_tokens": 12,
+            "cache_read_input_tokens": 2000,
+            "cache_creation_input_tokens": 0,
+            "output_tokens": 42,
+        }
         assert sink.reasoning_text == "why"
         assert sink.content_text == "Hello"
 
