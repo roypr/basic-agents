@@ -82,9 +82,9 @@ class PrintSink:
             return
         reasoning = "".join(self._reasoning_buffer)
         self._reasoning_buffer.clear()
-        safe_write(dim("[Think]\n"), self._stream, flush=True)
+        safe_write("[Think]\n", self._stream, flush=True)
         safe_write(reasoning, self._stream, flush=True)
-        safe_write(dim("\n[/Think]\n"), self._stream, flush=True)
+        safe_write("[/Think]\n", self._stream, flush=True)
 
     def content(self, text: str) -> None:
         if not text:
