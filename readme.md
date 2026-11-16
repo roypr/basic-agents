@@ -332,7 +332,7 @@ Model endpoints are configured in `providers.json` at the project root. Each pro
 
 | `type` | Endpoint | Auth | Reasoning control | Output budget field |
 |---|---|---|---|---|
-| `openai` | `/v1/chat/completions` | `Authorization: Bearer` | `reasoning_effort` | `max_completion_tokens` |
+| `openai` | `/v1/responses` | `Authorization: Bearer` | `reasoning: {effort, summary}` | `max_output_tokens` |
 | `deepseek` | `/chat/completions` | `Authorization: Bearer` | `reasoning_effort` + `thinking` | `max_tokens` |
 | `openrouter` | `/api/v1/chat/completions` | `Authorization: Bearer` | `reasoning: {effort}` | `max_tokens` |
 | `anthropic` | `/v1/messages` | `x-api-key` + `anthropic-version` | `thinking` + `output_config.effort` | `max_tokens` (required) |
@@ -389,7 +389,7 @@ Model endpoints are configured in `providers.json` at the project root. Each pro
 - **`providers[].max_tokens`** — provider-neutral output budget (Anthropic defaults to `8192` because the field is required).
 - **`providers[].reasoning_effort`** — default reasoning effort; `--reasoning-effort` overrides it.
 
-Provider-specific reasoning history is preserved automatically: DeepSeek `reasoning_content` (when tools are present), OpenRouter `reasoning_details`, and Anthropic signed `thinking` blocks survive a session resume. Reasoning is not sent to providers that do not accept it.
+Provider-specific reasoning history is preserved automatically: DeepSeek `reasoning_content` (when tools are present), OpenRouter `reasoning_details`, Anthropic signed `thinking` blocks, and OpenAI Responses `reasoning` items (replayed with their `encrypted_content`) survive a session resume. Reasoning is not sent to providers that do not accept it.
 
 A `providers.example.json` template is included. Copy it to get started:
 

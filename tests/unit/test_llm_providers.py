@@ -12,6 +12,7 @@ from utils.llm import (
     ModelAdapter,
     OpenAIAdapter,
     OpenRouterAdapter,
+    ProviderStreamError,
     get_adapter,
 )
 from utils.llm.base import iter_sse
@@ -122,7 +123,7 @@ class TestRegistry:
 
 @pytest.mark.unit
 class TestPayloads:
-    def test_openai_uses_current_token_and_reasoning_fields(self):
+    def test_openai_responses_payload_shape(self):
         payload = OpenAIAdapter().build_payload(
             _history(),
             "gpt-6-astra",
@@ -130,9 +131,23 @@ class TestPayloads:
             options=LLMOptions(max_tokens=512, reasoning_effort="high"),
         )
 
-        assert payload["max_completion_tokens"] == 512
+        # Responses API: output budget field, reasoning object, no chat messages.
+        assert payload["max_output_tokens"] == 512
         assert "max_tokens" not in payload
-        assert payload["reasoning_effort"] == "high"
+        assert "max_completion_tokens" not in payload
+        assert "messages" not in payload
+        assert payload["reasoning"] == {"effort": "high", "summary": "auto"}
+        assert payload["store"] is False
+        assert payload["include"] == ["reasoning.encrypted_content"]
+        # Tools are flat objects, not wrapped in ``function``.
+        assert payload["tools"] == [
+            {
+                "type": "function",
+                "name": "lookup",
+                "description": "Look something up",
+                "parameters": TOOLS[0]["function"]["parameters"],
+            }
+        ]
         # No llama.cpp-only parameters leak into a remote request.
         for legacy in (
             "cache_prompt",
@@ -145,13 +160,97 @@ class TestPayloads:
             "typical_p",
         ):
             assert legacy not in payload
-        # Reasoning metadata is not valid OpenAI chat history.
-        assistant = payload["messages"][2]
-        assert "reasoning_content" not in assistant
-        assert "reasoning_details" not in assistant
-        assert "reasoning_blocks" not in assistant
         # Newer OpenAI models use developer messages for instructions.
-        assert payload["messages"][0]["role"] == "developer"
+        items = payload["input"]
+        assert items[0] == {"role": "developer", "content": "system prompt"}
+        assert items[1] == {"role": "user", "content": "question"}
+        # Provider-specific reasoning metadata is not valid Responses input; the
+        # Anthropic-style thinking block is dropped, the answer is kept.
+        assert items[2] == {"role": "assistant", "content": "answer"}
+        assert items[3] == {
+            "type": "function_call",
+            "call_id": "call_1",
+            "name": "lookup",
+            "arguments": '{"q": "x"}',
+        }
+        assert items[4] == {
+            "type": "function_call_output",
+            "call_id": "call_1",
+            "output": "result",
+        }
+
+    def test_openai_replays_reasoning_and_multimodal_tool_output(self):
+        history = [
+            {"role": "system", "content": "system prompt"},
+            {"role": "user", "content": "question"},
+            {
+                "role": "assistant",
+                "content": "",
+                "reasoning_content": "think",
+                "reasoning_blocks": [
+                    {
+                        "type": "reasoning",
+                        "id": "rs_1",
+                        "summary": [{"type": "summary_text", "text": "think"}],
+                        "encrypted_content": "enc",
+                    }
+                ],
+                "tool_calls": [
+                    {
+                        "id": "call_1",
+                        "type": "function",
+                        "function": {"name": "lookup", "arguments": '{"q": "x"}'},
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "tool_call_id": "call_1",
+                "content": [
+                    {"type": "text", "text": "result"},
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": "data:image/png;base64,AAA"},
+                    },
+                ],
+            },
+        ]
+
+        items = OpenAIAdapter().normalize_messages(history)
+
+        # Reasoning item first, verbatim, then the tool call, then the output.
+        assert items[2] == {
+            "type": "reasoning",
+            "id": "rs_1",
+            "summary": [{"type": "summary_text", "text": "think"}],
+            "encrypted_content": "enc",
+        }
+        assert items[3] == {
+            "type": "function_call",
+            "call_id": "call_1",
+            "name": "lookup",
+            "arguments": '{"q": "x"}',
+        }
+        assert items[4] == {
+            "type": "function_call_output",
+            "call_id": "call_1",
+            "output": [
+                {"type": "input_text", "text": "result"},
+                {"type": "input_image", "image_url": "data:image/png;base64,AAA"},
+            ],
+        }
+
+    def test_openai_reasoning_effort_none_omits_summary(self):
+        payload = OpenAIAdapter().build_payload(
+            [{"role": "user", "content": "hi"}],
+            "gpt-6-astra",
+            options=LLMOptions(reasoning_effort="none"),
+        )
+        assert payload["reasoning"] == {"effort": "none"}
+        # No effort configured -> no reasoning object at all.
+        assert "reasoning" not in OpenAIAdapter().build_payload(
+            [{"role": "user", "content": "hi"}], "gpt-6-astra"
+        )
 
     def test_deepseek_keeps_reasoning_only_with_tools(self):
         with_tools = DeepSeekAdapter().build_payload(
@@ -241,9 +340,19 @@ class TestPayloads:
         assert "Authorization" not in headers
 
     def test_endpoint_normalisation(self):
+        adapter = OpenAIAdapter()
         assert (
-            OpenAIAdapter().endpoint("https://api.openai.com/v1")
-            == "https://api.openai.com/v1/chat/completions"
+            adapter.endpoint("https://api.openai.com/v1")
+            == "https://api.openai.com/v1/responses"
+        )
+        # A base URL that still points at Chat Completions is upgraded.
+        assert (
+            adapter.endpoint("https://api.openai.com/v1/chat/completions")
+            == "https://api.openai.com/v1/responses"
+        )
+        assert (
+            adapter.endpoint("https://api.openai.com")
+            == "https://api.openai.com/v1/responses"
         )
         assert (
             DeepSeekAdapter().endpoint("https://api.deepseek.com")
@@ -310,7 +419,7 @@ class TestCallLlmStreaming:
 
 @pytest.mark.unit
 class TestStreamDecoders:
-    def test_openai_decoder_handles_reasoning_and_tool_calls(self):
+    def test_chat_completions_decoder_handles_reasoning_and_tool_calls(self):
         response = _FakeResponse(
             _sse(
                 {"choices": [{"delta": {"reasoning": "think "}}]},
@@ -356,6 +465,139 @@ class TestStreamDecoders:
         assert message["finish_reason"] == "tool_calls"
         assert sink.reasoning_text == "think "
         assert sink.content_text == "Hi"
+
+    def test_openai_responses_decoder_handles_reasoning_and_tool_calls(self):
+        response = _FakeResponse(
+            _sse(
+                {"type": "response.created", "response": {"id": "resp_1"}},
+                {
+                    "type": "response.output_item.added",
+                    "output_index": 0,
+                    "item": {"type": "reasoning", "id": "rs_1", "summary": []},
+                },
+                {
+                    "type": "response.reasoning_summary_text.delta",
+                    "item_id": "rs_1",
+                    "output_index": 0,
+                    "summary_index": 0,
+                    "delta": "think ",
+                },
+                {
+                    "type": "response.output_item.done",
+                    "output_index": 0,
+                    "item": {
+                        "type": "reasoning",
+                        "id": "rs_1",
+                        "summary": [{"type": "summary_text", "text": "think "}],
+                        "encrypted_content": "enc",
+                    },
+                },
+                {
+                    "type": "response.output_text.delta",
+                    "item_id": "msg_1",
+                    "output_index": 1,
+                    "content_index": 0,
+                    "delta": "Hi",
+                },
+                {
+                    "type": "response.output_item.added",
+                    "output_index": 2,
+                    "item": {
+                        "type": "function_call",
+                        "id": "fc_1",
+                        "call_id": "call_1",
+                        "name": "lookup",
+                        "arguments": "",
+                    },
+                },
+                {
+                    "type": "response.function_call_arguments.delta",
+                    "item_id": "fc_1",
+                    "output_index": 2,
+                    "delta": '{"q":',
+                },
+                {
+                    "type": "response.function_call_arguments.delta",
+                    "item_id": "fc_1",
+                    "output_index": 2,
+                    "delta": '"x"}',
+                },
+                {
+                    "type": "response.function_call_arguments.done",
+                    "item_id": "fc_1",
+                    "output_index": 2,
+                    "arguments": '{"q":"x"}',
+                },
+                {
+                    "type": "response.completed",
+                    "response": {
+                        "id": "resp_1",
+                        "status": "completed",
+                        "incomplete_details": None,
+                    },
+                },
+            )
+        )
+        sink = BufferSink()
+        message = OpenAIAdapter().stream_and_collect(response, sink)
+
+        assert message["content"] == "Hi"
+        assert message["reasoning_content"] == "think "
+        assert message["reasoning_blocks"] == [
+            {
+                "type": "reasoning",
+                "id": "rs_1",
+                "summary": [{"type": "summary_text", "text": "think "}],
+                "encrypted_content": "enc",
+            }
+        ]
+        assert message["tool_calls"] == [
+            {
+                "id": "call_1",
+                "type": "function",
+                "function": {"name": "lookup", "arguments": '{"q":"x"}'},
+            }
+        ]
+        assert message["finish_reason"] == "tool_calls"
+        assert sink.reasoning_text == "think "
+        assert sink.content_text == "Hi"
+
+    def test_openai_responses_decoder_maps_incomplete_to_length(self):
+        response = _FakeResponse(
+            _sse(
+                {
+                    "type": "response.output_text.delta",
+                    "output_index": 0,
+                    "delta": "trunc",
+                },
+                {
+                    "type": "response.incomplete",
+                    "response": {
+                        "status": "incomplete",
+                        "incomplete_details": {"reason": "max_output_tokens"},
+                    },
+                },
+            )
+        )
+        message = OpenAIAdapter().stream_and_collect(response, BufferSink())
+        assert message["content"] == "trunc"
+        assert message["finish_reason"] == "length"
+
+    def test_openai_responses_failed_event_raises(self):
+        response = _FakeResponse(
+            _sse(
+                {
+                    "type": "response.failed",
+                    "response": {
+                        "status": "failed",
+                        "error": {"code": "server_error", "message": "boom"},
+                    },
+                }
+            )
+        )
+        with pytest.raises(ProviderStreamError) as excinfo:
+            OpenAIAdapter().stream_and_collect(response, BufferSink())
+        assert "boom" in str(excinfo.value)
 
     def test_anthropic_decoder_handles_thinking_and_partial_tool_json(self):
         events = [

@@ -106,8 +106,8 @@ class LLMOptions:
     """Provider-neutral request options.
 
     ``max_tokens`` is the canonical output budget.  Adapters map it to the
-    provider's current field name (OpenAI: ``max_completion_tokens``; Anthropic
-    and the OpenAI-compatible providers: ``max_tokens``).
+    provider's current field name (OpenAI Responses: ``max_output_tokens``;
+    Anthropic and the OpenAI-compatible providers: ``max_tokens``).
     """
 
     max_tokens: int | None = None
@@ -227,8 +227,9 @@ class ModelAdapter:
     """Base adapter for OpenAI-compatible chat-completions APIs.
 
     Subclasses override endpoint/header/payload details.  The shared streaming
-    decoder handles the common ``choices[0].delta`` shape used by OpenAI,
-    DeepSeek and OpenRouter.
+    decoder handles the common ``choices[0].delta`` shape used by DeepSeek and
+    OpenRouter; adapters with a different wire format (Anthropic Messages,
+    OpenAI Responses) override :meth:`stream_and_collect`.
     """
 
     provider = "openai_compatible"
