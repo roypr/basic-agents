@@ -314,7 +314,15 @@ def build_parser() -> argparse.ArgumentParser:
         p.add_argument(
             "--api-key", default=None, help="Override API key (bypasses providers.json)"
         )
-        p.add_argument("--max-turns", type=int, default=10, help="Max tool-call rounds")
+        p.add_argument(
+            "--max-turns",
+            type=int,
+            default=-1,
+            help=(
+                "Max tool-call rounds before stopping. -1 (default) means "
+                "unlimited; Ctrl+C still interrupts the run"
+            ),
+        )
         p.add_argument(
             "--max-output-tokens",
             type=int,

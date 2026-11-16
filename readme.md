@@ -74,8 +74,7 @@ python main.py run \
   --agent default \
   --provider deepseek \
   --model deepseek-v4-flash \
-  --query "Refactor this module" \
-  --max-turns 50
+  --query "Refactor this module"
 ```
 
 List everything configured in `providers.json`:
@@ -101,23 +100,31 @@ This works with any provider that exposes an OpenAI-compatible `/chat/completion
 
 ### Long-running Tasks
 
-For tasks that span many tool calls — large refactors, file processing pipelines, multi-step research — set `--max-turns` generously. If the agent hits the limit before finishing, resume from where it left off.
+Agents run with **unlimited turns** by default (`--max-turns -1`): the agent keeps working until it produces a final answer (or calls the `finish` tool), so long refactors, file-processing pipelines, and multi-step research no longer stop early. Press `Ctrl+C` to interrupt a run at any time — in `chat` you return to the prompt with the session resumable, and in a one-shot `run` the process exits gracefully.
+
+Pass an explicit round cap only when you want a hard stop:
+
+```bash
+python main.py run --agent default --query "Audit the repo" --max-turns 50
+```
+
+If the agent stops (explicit cap reached or you interrupted it), resume from where it left off.
 
 Resume a specific session by ID:
 
 ```bash
 # Start a long task
 python main.py run --agent default --query "Audit and fix all TODO comments in the repo" \
-  --max-turns 100 --session-name "todo-audit"
+  --session-name "todo-audit"
 
 # If it stops, resume by session ID
-python main.py run --agent default --query "Continue" --resume-session 3 --max-turns 100
+python main.py run --agent default --query "Continue" --resume-session 3
 ```
 
 Or resume the latest active session automatically with `--continue`:
 
 ```bash
-python main.py run --agent default --query "Continue" --continue --max-turns 100
+python main.py run --agent default --query "Continue" --continue
 ```
 
 > **Note:** `--continue` and `--resume-session` are mutually exclusive.
@@ -134,7 +141,7 @@ Sessions persist the full conversation history, so the agent picks up with compl
 | `--model` | `providers.json` default | Model name for the chosen provider |
 | `--llm-base` | — | Override the LLM base URL (bypasses `providers.json`) |
 | `--api-key` | — | Override the API key (bypasses `providers.json`) |
-| `--max-turns` | `10` | Maximum tool-call rounds before stopping — set generously for long tasks |
+| `--max-turns` | `-1` | Maximum tool-call rounds. `-1` means unlimited (agent decides when to stop); a positive value caps the loop. `Ctrl+C` interrupts either way |
 | `--max-output-tokens` | provider default | Output token budget. Mapped per provider: OpenAI `max_completion_tokens`, Anthropic/DeepSeek/OpenRouter `max_tokens` |
 | `--reasoning-effort` | provider default | Reasoning effort: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` |
 | `--files-base-dir` | `/workspace` | Base directory exposed to file tools |

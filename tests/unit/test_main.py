@@ -63,6 +63,13 @@ class TestParserPermissionFlags:
         assert args.max_output_tokens == 4096
         assert args.reasoning_effort == "high"
 
+    def test_max_turns_defaults_to_unlimited(self):
+        assert self._parse(["run"]).max_turns == -1
+        assert self._parse(["chat"]).max_turns == -1
+
+    def test_max_turns_explicit_value_parses(self):
+        assert self._parse(["run", "--max-turns", "10"]).max_turns == 10
+
 
 @pytest.mark.unit
 class TestMcpCommand:

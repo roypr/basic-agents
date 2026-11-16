@@ -396,3 +396,88 @@ class TestStreamSink:
         agent.run("hi")
 
         assert captured["sink"] is sink
+
+
+@pytest.mark.unit
+class TestMaxTurns:
+    """max_turns == -1 (default) runs unbounded; an explicit cap still applies."""
+
+    @staticmethod
+    def _patch_loop(monkeypatch, tool_rounds: int):
+        """Fake LLM that calls a tool `tool_rounds` times, then answers."""
+        calls = []
+
+        def fake_llm(*args, **kwargs):
+            calls.append(1)
+            if len(calls) > tool_rounds:
+                return {"role": "assistant", "content": "done"}
+            return {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [_tc("file_read", {}, f"call_{len(calls)}")],
+            }
+
+        monkeypatch.setattr("core.base_agent.init_session_db", lambda *a, **k: 9)
+        monkeypatch.setattr("core.base_agent.call_llm_streaming", fake_llm)
+        monkeypatch.setattr(
+            "core.base_agent.execute_tool_calls",
+            lambda tcs, tool_map, tools: [
+                (tc, tc["function"]["name"], {}, "ok") for tc in tcs
+            ],
+        )
+        return calls
+
+    def test_unlimited_turns_keeps_going_past_old_default(self, monkeypatch, capsys):
+        calls = self._patch_loop(monkeypatch, tool_rounds=25)
+
+        agent = _run_agent()
+        agent.max_turns = -1
+        agent.run("hi")
+
+        # 25 tool rounds + 1 final answer, well past the previous cap of 10.
+        assert len(calls) == 26
+        assert "Max turns reached" not in capsys.readouterr().out
+
+    def test_explicit_max_turns_still_caps(self, monkeypatch, capsys):
+        calls = self._patch_loop(monkeypatch, tool_rounds=25)
+
+        agent = _run_agent()
+        agent.max_turns = 3
+        agent.run("hi")
+
+        assert len(calls) == 3
+        assert "Max turns reached" in capsys.readouterr().out
+
+    def test_keyboard_interrupt_propagates_when_unlimited(self, monkeypatch):
+        """Ctrl+C must still abort the run, not be swallowed by the loop."""
+        calls = []
+
+        def fake_llm(*args, **kwargs):
+            calls.append(1)
+            if len(calls) == 3:
+                raise KeyboardInterrupt
+            return {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [_tc("file_read", {}, f"call_{len(calls)}")],
+            }
+
+        monkeypatch.setattr("core.base_agent.init_session_db", lambda *a, **k: 9)
+        monkeypatch.setattr("core.base_agent.call_llm_streaming", fake_llm)
+        monkeypatch.setattr(
+            "core.base_agent.execute_tool_calls",
+            lambda tcs, tool_map, tools: [
+                (tc, tc["function"]["name"], {}, "ok") for tc in tcs
+            ],
+        )
+
+        agent = _run_agent()
+        agent.max_turns = -1
+        with pytest.raises(KeyboardInterrupt):
+            agent.run("hi")
+
+        assert len(calls) == 3
+
+    def test_rejects_max_turns_below_unlimited_sentinel(self):
+        with pytest.raises(ValueError, match="max_turns"):
+            BaseAgent(max_turns=-2)

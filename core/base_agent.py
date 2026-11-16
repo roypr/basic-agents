@@ -1,3 +1,4 @@
+import itertools
 import json
 import logging
 from db.session_db import SessionDB
@@ -30,7 +31,7 @@ class BaseAgent:
         name: str = "Agent",
         model: str = "local",
         llm_base: str = "http://localhost:8080",
-        max_turns: int = 10,
+        max_turns: int = -1,
         resume_session: int | None = None,
         session_name: str = "Default Session",
         api_key: str = "",
@@ -47,6 +48,10 @@ class BaseAgent:
         self.model = model
         self.llm_base = llm_base
         self.max_turns = max_turns
+        # -1 (the default) means unlimited turns; anything below that is a
+        # caller bug rather than a stricter limit.
+        if max_turns < -1:
+            raise ValueError("max_turns must be -1 (unlimited) or >= 0")
         self.resume_session = resume_session
         self.session_name = session_name
         self.api_key = api_key
@@ -345,7 +350,10 @@ class BaseAgent:
                 session_id, "user", self._serialize_content(user_content)
             )
 
-        for turn in range(self.max_turns):
+        # max_turns == -1 means unlimited: the loop ends only when the model
+        # stops calling tools, calls finish, or the user interrupts (Ctrl+C).
+        turns = itertools.count() if self.max_turns < 0 else range(self.max_turns)
+        for turn in turns:
             if self._shutdown_requested:
                 print(
                     f"[{self.name}] Shutdown requested. Exiting before next turn. To resume session id {session_id}"
