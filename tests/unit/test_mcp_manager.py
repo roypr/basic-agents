@@ -265,6 +265,7 @@ class TestBaseAgentIntegration:
 
         assert {t["function"]["name"] for t in agent.tools} == {
             "local_tool",
+            "note_to_self",
             "mcp__fs__read_file",
         }
         assert "mcp__fs__read_file" in agent.tool_map

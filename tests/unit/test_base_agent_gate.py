@@ -81,6 +81,7 @@ def _run_agent():
     agent.tools = []
     agent.tool_map = {}
     agent.system_prompt = "sys"
+    agent.notes = Mock(render=Mock(return_value=""))
     agent.permission_policy = PermissionPolicy(
         agent_tool_names=[],
         rule_store=InMemoryRuleStore(),

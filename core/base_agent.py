@@ -2,6 +2,7 @@ import itertools
 import json
 import logging
 from db.session_db import SessionDB
+from core.agent_notes import NOTE_TOOL_NAME, NOTE_TOOL_SCHEMA, AgentNotes
 from core.permissions import SAFE_TOOLS, AutoAllowResolver, PermissionPolicy
 from core.rule_store import InMemoryRuleStore
 from utils.http_utils import close_request_session
@@ -73,6 +74,10 @@ class BaseAgent:
         # and MCP tools are appended per agent instance.
         self.tools = list(self.get_tools())
         self.tool_map = dict(self.get_tool_map())
+        # Per-agent notes-to-self store; the tool writes only to this agent's file.
+        self.notes = AgentNotes(self._agent_dir_name())
+        self.tools = self.tools + [NOTE_TOOL_SCHEMA]
+        self.tool_map = {**self.tool_map, NOTE_TOOL_NAME: self.notes.note_to_self}
         self.system_prompt = self.resolve_system_prompt()
 
         # Optional MCP servers extend this agent's tool surface. Namespaced
@@ -97,6 +102,10 @@ class BaseAgent:
 
     def resolve_system_prompt(self) -> str:
         return self.get_system_prompt()
+
+    def _build_system_prompt(self) -> str:
+        """Per-run system prompt: the agent's prompt plus its saved notes to self."""
+        return self.system_prompt + self.notes.render()
 
     def get_system_prompt(self) -> str:
         return SYSTEM_PROMPT
@@ -310,7 +319,7 @@ class BaseAgent:
         self.permission_policy.scope_key = session_id
 
         # Agent's own prompt is the authority — never overridden from DB
-        final_system_prompt = self.system_prompt
+        final_system_prompt = self._build_system_prompt()
 
         messages = self.session_db.get_messages(session_id)
         # Heal sessions where a previous run died before producing tool results.

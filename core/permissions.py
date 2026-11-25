@@ -42,6 +42,8 @@ SAFE_TOOLS = frozenset(
         "web_search",
         "request_get",
         "finish",
+        # Only appends to this agent's own notes file (core/agent_notes.py).
+        "note_to_self",
     }
 )
 
